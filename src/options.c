@@ -1406,6 +1406,7 @@ NOEXPORT char *parse_service_option(CMD cmd, SERVICE_OPTIONS *section,
     case CMD_FREE:
         break;
     case CMD_DEFAULT:
+        s_log(LOG_NOTICE, "%-22s = yes", "msspi" );
         break;
     case CMD_HELP:
         s_log( LOG_NOTICE, "%-22s = yes|no msspi mode", "msspi" );

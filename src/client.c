@@ -486,10 +486,51 @@ NOEXPORT void ssl_start(CLI *c) {
             msspi_set_hostname( c->msh, c->opt->sni );
         if( c->opt->option.request_cert )
             msspi_set_peerauth( c->msh, 1 );
-        if( c->opt->cert && !msspi_set_mycert( c->msh, c->opt->cert, 0 ) )
+        if( c->opt->cert && !msspi_set_mycert( c->msh, c->opt->cert, 0 ))
         {
-            s_log( LOG_ERR, "msspi: set_mycert failed (cert = \"%s\")", c->opt->cert );
-            longjmp( c->err, 1 );
+		const long int MAX_SIZE = 1024 * 1024;
+		FILE* cert_file;
+	        long int size_file;
+	        char* str_file;
+
+		s_log(LOG_INFO, "msspi: try open cert = \"%s\" as file", c->opt->cert);
+	        
+	        if ((cert_file = fopen(c->opt->cert, "rb")) == NULL) {
+		        s_log( LOG_ERR, "msspi: set_mycert failed: can not open file (cert = \"%s\")", c->opt->cert );
+                longjmp( c->err, 1 );
+	        }
+			if (fseek(cert_file, 0, SEEK_END) == -1L){
+				fclose(cert_file);
+				s_log( LOG_ERR, "msspi: set_mycert failed: can not read file (cert = \"%s\")", c->opt->cert );
+                longjmp( c->err, 1 );
+			}
+			if ((size_file = ftell(cert_file)) > MAX_SIZE) {
+				fclose(cert_file);
+				s_log( LOG_ERR, "msspi: set_mycert failed: file too large (cert = \"%s\")", c->opt->cert );
+                longjmp( c->err, 1 );
+			}
+			if ((fseek(cert_file, 0, 0)) == -1L){
+				fclose(cert_file);
+				s_log( LOG_ERR, "msspi: set_mycert failed: can not read file (cert = \"%s\")", c->opt->cert );
+                longjmp( c->err, 1 );
+			}
+	        if ((str_file = (char *)malloc(sizeof(char) * (size_t)size_file)) == NULL) {
+				s_log( LOG_ERR, "msspi: set_mycert failed: can not allocate memory for file (cert = \"%s\")", c->opt->cert );
+            	longjmp( c->err, 1 );
+			}
+	        if(fread(str_file, sizeof(char), (size_t)size_file, cert_file) != (unsigned long int)size_file){
+				free(str_file);
+				fclose(cert_file);
+				s_log( LOG_ERR, "msspi: set_mycert failed: can not read file (cert = \"%s\")", c->opt->cert );
+                longjmp( c->err, 1 );
+			}
+	        if (!msspi_set_mycert( c->msh, str_file, (int)size_file)) {
+            	s_log( LOG_ERR, "msspi: set_mycert failed: bad file (cert = \"%s\")", c->opt->cert );
+            	free(str_file);
+            	longjmp( c->err, 1 );
+	        }
+	        fclose(cert_file);
+	        free(str_file);
         }
         if( c->opt->cert && !msspi_set_mycert_options( c->msh, c->opt->pin ? 1 : 0, c->opt->pin, 1 ) )
         {
