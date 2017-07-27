@@ -293,6 +293,30 @@ AC_ARG_ENABLE(ipv6,
     ]
 )
 
+# Use msspi?
+AC_MSG_CHECKING([whether to enable msspi support])
+AC_ARG_ENABLE(msspi,
+[  --enable-msspi          enable msspi support],
+    [
+        case "$enableval" in
+            yes) AC_MSG_RESULT([yes])
+                 AC_DEFINE([USE_MSSPI], [1],
+                    [Define to 1 to enable MSSPI support])
+                 LIBS="-L./msspi/build_linux -lmsspi $LIBS -lstdc++ -ldl -L/opt/cprocsp/lib/amd64 -lcapi10 -lcapi20"
+                 ;;
+            no)  AC_MSG_RESULT([no])
+                 ;;
+            *)   AC_MSG_RESULT([error])
+                 AC_MSG_ERROR([bad value \"${enableval}\"])
+                 ;;
+        esac
+    ], [
+        AC_MSG_RESULT([no (default)])
+    ], [
+        AC_MSG_RESULT([yes])
+    ]
+)
+
 # FIPS Mode
 AC_MSG_CHECKING([whether to enable FIPS support])
 AC_ARG_ENABLE(fips,

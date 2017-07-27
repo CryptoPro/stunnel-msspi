@@ -1,27 +1,52 @@
-sudo: false
-
+sudo: enabled
+dist: trusty
 language: c
-
 os:
-  - linux
-  - osx
-
+- linux
 compiler:
-  - gcc
-  - clang
-
+- gcc
+before install:
+- sudo apt-get -qq update
 env:
-  - CONFIGURE_OPTIONS='--with-threads=pthread'
-  - CONFIGURE_OPTIONS='--with-threads=fork'
-  - CONFIGURE_OPTIONS='--with-threads=ucontext'
-  - CONFIGURE_OPTIONS='--disable-ipv6 --disable-fips --disable-systemd --disable-libwrap'
-
+  global:
+  - OpenSSL::OPENSSL_VERSION=openssl-1.0.2
+  - secure: Uhwu33UC9qUmoCexF3ZexodCJXiyTtsHXB+4Tgs6dkfn3H78XU6ZtufNN8XdFPVEJAkpQtl/52rnYQV19DP5MdYlTOuOxJXXhsPZx9GPjzwA/w5shQcc67IR4gWo//9iS+/cJB97dLBjE1QwMgad4g9zywqI0zdak9xb4byfBl+y3zMyZmC+q3X/ZSoCckl3Sfv3u1v+nOo9qW7uy2rKQNPIoPGgmSlVe3mIWVjYQm4Jrrow0YjHkjNHdZOcxAXZ/MZswKJaH43vPZCdQQLdu0xd5ypzCnfzxPxblgIdYGNgxRu5wr/ubtKdlBTb/Vr2nejfgiRDuJdOvtxBkRrl2kgnI70rr7uat3YcfbwBLrapWR4o9qmSaNM7HfQarSpRlfrBRokhPVh03xEUwJXbZqCMp39hOeXzNBuQYgvTliquiMc4wYWcsOpMWAWrbFMkq+x5OcQZX67v8/PXwqIfQou8Te2rp1WFbEiLMkz3l7KGi4ykSEXIoJ8xD7SPuR2CmBoYP53ZPP550H8M/ZDJhqL+Q0zhOGpVTEZDT4yKBk3lzq9QBnqC3lsThtJv47wmQI9h3ePer2JHqeyFOt2wEIdSofOQ3lJqUZy5AG++uQ8rrZJat3tICcavGXuzCkCIrlho7y6WH7/5l0R08eZZ3BXJF+380zHK3abajpkdJio=
+  matrix:
+  - CONFIGURE_OPTIONS='--enable-msspi' MSSPI='yes'
 addons:
   apt:
+    sources:
+    - ubuntu-toolchain-r-test
     packages:
+    - g++-4.9
     - libssl-dev
     - libwrap0-dev
+install:
+- if [ $MSSPI == yes ]; then wget https://$ACCOUNT@update.cryptopro.ru/support/stunnel/dist/csp40r3/linux-amd64_deb.tgz
+  && tar -xvf linux-amd64_deb.tgz && sudo linux-amd64_deb/install.sh; fi
+before_script:
+- autoreconf -fvi && touch src/dhparam.c
+- ln -s /usr/bin/g++-4.9 g++
+- cd src/msspi/build_linux && make
+- cd ../../..
+- openssl version
+- perl -v
+script:
+- "./configure $CONFIGURE_OPTIONS"
+- make
+- make test
+- cd src
+- sudo perl make_default_certs.pl
+- sudo perl stunnel.pl local
+- sudo killall stunnel
+- cd ..
+after_success: 
+deploy:
+  provider: releases
+  api_key:
+    secure: fsx4E4cP/opsYEP98aEkqldgKUIctTZQOmHj2niMuCFp8+ELI7+3y24umxkdMsDeKjcxU3s+X82bWmqqszp/U2lHmcUh4gWrBiGszbe95O8fYZrNDN1crDCPPH1+UM7mdCm0p/5TO+s/sbkD1fFERZCEFm+dTGWOUfM2rt5nxupt6/nSSQAiyayVa7qBuQMLFw4g182rfSv9pYypwNdKjxwMsvmqll3A9p1YzetKS0AfYm7VPgwNWR/DDvum92XpsC3eqEOlxvKcDeuj4JouvUfHeiXOWDBG063umThOqbrISMh7VFaLqpkGWRC4CDzzDtZRVKKl0slkbP1D+Phe+TJB53iwh65V7zUsj5XbZNJjr/HsLej3sECkyJkMgDRSc17Iss/iPzUw97opZPqzd2Ow3BtLCr3APMqaBSZbpkpn0E4MZYFJ2FmtFAG2RBot38nRSc/riLcEp0vYiQNgNrIVLJVqRPxoL5bG8kwZbXGrEHgbIHKR0aVSRy+ZuPCpDCTCUuznLDOjmbAfs4Ww0iW99vfRKNy8+Vwy+nzFSyR9AkSdDntcYJDU3RWyF5HU8jOiYV7hvyAp5h56+A23D6wfrhPVjASPKmwlHu+NP7tH5gyLna94EeTIaMLkhgcrMUlv8gg70EHz9jPJB8yAiJw/dcRgJaCSyHrN4ZebHZc=
+  skip_cleanup: true  
+  file: src/stunnel
+  on:
+    tags: true
 
-before_script: autoreconf -fvi && touch src/dhparam.c
-
-script: ./configure $CONFIGURE_OPTIONS && make && make test
