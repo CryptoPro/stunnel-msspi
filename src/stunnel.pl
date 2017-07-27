@@ -207,6 +207,7 @@ sub PrepareAndRunConf($$$$) {
     close(FL);
 
     RunCmd("Start stunnel", $cmd_line);
+    RunCmd("Print config", 'cat ' . $conf_file);
 }
 
 #-----------------------------------------------------------------------------

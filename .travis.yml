@@ -38,9 +38,7 @@ script:
 - cd src
 - sudo perl make_default_certs.pl
 - sudo perl stunnel.pl local
-- sudo perl stunnel_server.pl > srvlog &
-- sudo perl stunnel_client.pl local
-- sudo cat srvlog
+- sudo killall stunnel
 - cd ..
 after_success: 
 deploy:
