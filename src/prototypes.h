@@ -42,7 +42,7 @@
 
 #ifdef USE_MSSPI
 #define MSSPISSL
-#define MAPOIDSSL
+//#define MAPOIDSSL
 #endif
 
 #ifdef MSSPISSL
@@ -742,6 +742,9 @@ const char *s_gai_strerror(int);
 #define getnameinfo     local_getnameinfo
 
 #ifndef _WIN32_WCE
+
+// CPRO: если нужно избавить от warnings, то код ниже нужно вынести из
+// под HAVE_GETNAMEINFO и выставить -DHAVE_GETNAMEINFO
 typedef int (CALLBACK * GETADDRINFO) (const char *,
     const char *, const struct addrinfo *, struct addrinfo **);
 typedef void (CALLBACK * FREEADDRINFO) (struct addrinfo *);

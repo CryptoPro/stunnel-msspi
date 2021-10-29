@@ -48,7 +48,8 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #endif /* __GNUC__ */
 
-#include <openssl/applink.c>
+// CPRO: правильный путь до applink
+#include <ms/applink.c>
 
 #ifdef __GNUC__
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)

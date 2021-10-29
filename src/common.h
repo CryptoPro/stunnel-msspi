@@ -399,8 +399,8 @@ extern char *sys_errlist[];
 #ifdef HAVE_SYS_SYSCALL_H
 #include <sys/syscall.h> /* SYS_gettid */
 #endif
-#ifdef HAVE_LINUX_SCHED_H
-#include <linux/sched.h> /* SCHED_BATCH */
+#ifdef HAVE_SCHED_H
+#include <sched.h> /* SCHED_BATCH */
 #endif
 
 #endif /* USE_WIN32 */
