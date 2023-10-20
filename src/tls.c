@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -60,6 +60,7 @@ void tls_init() {
         str_realloc_detached_debug, free_function);
 #endif
 #endif /* NO_OPENSSLOFF */
+    str_init();
 }
 
 /* this has to be the first function called by a new thread */
@@ -75,7 +76,7 @@ TLS_DATA *tls_alloc(CLI *c, TLS_DATA *inherited, const char *txt) {
             fatal("Out of memory");
         if(c)
             c->tls=tls_data;
-        str_init(tls_data);
+        str_thread_init(tls_data);
         tls_data->c=c;
         tls_data->opt=c?c->opt:&service_options;
     }
@@ -101,7 +102,7 @@ void tls_cleanup() {
     tls_data=tls_get();
     if(!tls_data)
         return;
-    str_cleanup(tls_data);
+    str_thread_cleanup(tls_data);
     str_free_const(tls_data->id); /* detached allocation */
     tls_set(NULL);
     free(tls_data);

@@ -1,4 +1,4 @@
-# wce.mak for stunnel.exe by Michal Trojnara 1998-2022
+# wce.mak for stunnel.exe by Michal Trojnara 1998-2023
 # with help of Pierre Delaage <delaage.pierre@free.fr>
 # pdelaage 20140610 : added UNICODE optional FLAG, always ACTIVE on WCE because of poor ANSI support
 # pdelaage 20140610 : added _WIN32_WCE flag for RC compilation, to preprocess out "HELP" unsupported menu flag on WCE
@@ -116,7 +116,7 @@ OBJS=$(OBJ)\stunnel.obj $(OBJ)\ssl.obj $(OBJ)\ctx.obj $(OBJ)\verify.obj \
 	$(OBJ)\file.obj $(OBJ)\client.obj $(OBJ)\protocol.obj $(OBJ)\sthreads.obj \
 	$(OBJ)\log.obj $(OBJ)\options.obj $(OBJ)\network.obj $(OBJ)\resolver.obj \
 	$(OBJ)\str.obj $(OBJ)\tls.obj $(OBJ)\fd.obj $(OBJ)\dhparam.obj \
-	$(OBJ)\cron.obj
+	$(OBJ)\ocsp.obj $(OBJ)\cron.obj
 
 GUIOBJS=$(OBJ)\ui_win_gui.obj $(OBJ)\resources.res
 CLIOBJS=$(OBJ)\ui_win_cli.obj

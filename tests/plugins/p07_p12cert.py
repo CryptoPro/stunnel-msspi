@@ -2,7 +2,7 @@
 
 import logging
 import pathlib
-from plugin_collection import Plugin
+from plugin_collection import Plugin, ERR_CONN_RESET
 from maketest import (
     Config,
     StunnelAcceptConnect
@@ -35,7 +35,7 @@ class Certp12Test(StunnelTest):
             "unsupported protocol",
             "TLS accepted: previous session reused",
             "Redirecting connection",
-            "Connection reset by peer",
+            ERR_CONN_RESET,
             "Connection lost",
             "Client received unexpected message",
             "Server received unexpected message",
@@ -49,7 +49,6 @@ class Certp12Test(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel server."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no

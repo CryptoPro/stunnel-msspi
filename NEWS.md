@@ -1,13 +1,94 @@
 # stunnel change log
 
 
-### Version 5.65, 2022.07.11, urgency: HIGH
+### Version 5.71, 2023.09.19, urgency: MEDIUM
+* Security bugfixes
+  - OpenSSL DLLs updated to version 3.1.3.
+* Bugfixes
+  - Fixed the console output of tstunnel.exe.
+* Features sponsored by SAE IT-systems
+  - OCSP stapling is requested and verified in the client mode.
+  - Using "verifyChain" automatically enables OCSP
+    stapling in the client mode.
+  - OCSP stapling is always available in the server mode.
+  - An inconclusive OCSP verification breaks TLS negotiation.
+    This can be disabled with "OCSPrequire = no".
+  - Added the "TIMEOUTocsp" option to control the maximum
+    time allowed for connecting an OCSP responder.
+* Features
+  - Added support for Red Hat OpenSSL 3.x patches.
+
+### Version 5.70, 2023.07.12, urgency: HIGH
+* Security bugfixes
+  - OpenSSL DLLs updated to version 3.0.9.
+  - OpenSSL FIPS Provider updated to version 3.0.8.
+* Bugfixes
+  - Fixed TLS socket EOF handling with OpenSSL 3.x.
+    This bug caused major interoperability issues between
+    stunnel built with OpenSSL 3.x and Microsoft's
+    Schannel Security Support Provider (SSP).
+  - Fixed reading certificate chains from PKCS#12 files.
+* Features
+  - Added configurable delay for the "retry" option.
+
+### Version 5.69, 2023.03.04, urgency: MEDIUM
+* New features
+  - Improved logging performance with the "output" option.
+  - Improved file read performance on the WIN32 platform.
+  - DH and kDHEPSK ciphersuites removed from FIPS defaults.
+  - Set the LimitNOFILE ulimit in stunnel.service to allow
+    for up to 10,000 concurrent clients.
+* Bugfixes
+  - Fixed the "CApath" option on the WIN32 platform by
+    applying https://github.com/openssl/openssl/pull/20312.
+  - Fixed stunnel.spec used for building rpm packages.
+  - Fixed tests on some OSes and architectures by merging
+    Debian 07-tests-errmsg.patch (thx to Peter Pentchev).
+
+### Version 5.68, 2023.02.07, urgency: HIGH
+* Security bugfixes
+  - OpenSSL DLLs updated to version 3.0.8.
+* New features
+  - Added the new 'CAengine' service-level option
+    to load a trusted CA certificate from an engine.
+  - Added requesting client certificates in server
+    mode with 'CApath' besides 'CAfile'.
+  - Improved file read performance.
+  - Improved logging performance.
+* Bugfixes
+  - Fixed EWOULDBLOCK errors in protocol negotiation.
+  - Fixed handling TLS errors in protocol negotiation.
+  - Prevented following fatal TLS alerts with TCP resets.
+  - Improved OpenSSL initialization on WIN32.
+  - Improved testing suite stability.
+
+### Version 5.67, 2022.11.01, urgency: HIGH
+* Security bugfixes
+  - OpenSSL DLLs updated to version 3.0.7.
+* New features
+  - Provided a logging callback to custom engines.
+* Bugfixes
+  - Fixed "make cert" with OpenSSL older than 3.0.
+  - Fixed the code and the documentation to use conscious
+    language for SNI servers (thx to Clemens Lang).
+
+### Version 5.66, 2022.09.11, urgency: MEDIUM
+* New features
+  - OpenSSL 3.0 FIPS Provider support for Windows.
+* Bugfixes
+  - Fixed building on machines without pkg-config.
+  - Added the missing "environ" declaration for
+    BSD-based operating systems.
+  - Fixed the passphrase dialog with OpenSSL 3.0.
+
+### Version 5.65, 2022.07.17, urgency: HIGH
 * Security bugfixes
   - OpenSSL DLLs updated to version 3.0.5.
 * Bugfixes
   - Fixed handling globally enabled FIPS.
-  - Fixed the default openssl.cnf path in stunnel.exe.
-  - Fixed a number of MSVC warnings.
+  - Fixed openssl.cnf processing in WIN32 GUI.
+  - Fixed a number of compiler warnings.
+  - Fixed tests on older versions of OpenSSL.
 
 ### Version 5.64, 2022.05.06, urgency: MEDIUM
 * Security bugfixes
@@ -255,7 +336,7 @@
   - Clarified port binding error logs.
   - Various "make test" improvements.
 * Bugfixes
-  - Fixed a crash on switching to SNI slave sections.
+  - Fixed a crash on switching to SNI secondary sections.
 
 ### Version 5.46, 2018.05.28, urgency: MEDIUM
 * New features
@@ -376,8 +457,8 @@
 ### Version 5.37, 2016.11.06, urgency: MEDIUM
 * Bugfixes
   - OpenSSL DLLs updated to version 1.0.2j (stops crashes).
-  - The default SNI target (not handled by any slave service)
-    is handled by the master service rather than rejected.
+  - The default SNI target (not handled by any secondary service)
+    is handled by the primary service rather than rejected.
   - Removed thread synchronization in the FORK threading model.
 
 ### Version 5.36, 2016.09.22, urgency: HIGH

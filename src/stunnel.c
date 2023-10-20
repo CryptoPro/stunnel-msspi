@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -268,7 +268,7 @@ NOEXPORT void terminate_threads() {
     threads=0;
     for(c=thread_head; c; c=c->thread_next) /* count client threads */
         threads++;
-    thread_list=str_alloc((threads+1)*sizeof(THREAD_ID));
+    thread_list=str_alloc((threads+2)*sizeof(THREAD_ID));
     i=0;
     for(c=thread_head; c; c=c->thread_next) { /* copy client threads */
         thread_list[i++]=c->thread_id;
@@ -278,6 +278,16 @@ NOEXPORT void terminate_threads() {
     if(cron_thread_id) { /* append cron_thread_id if used */
         thread_list[threads++]=cron_thread_id;
         s_log(LOG_DEBUG, "Terminating the cron thread");
+    }
+
+    if(per_second_thread_id) { /* append per_second_thread_id if used */
+        thread_list[threads++]=per_second_thread_id;
+        s_log(LOG_DEBUG, "Terminating the per-second thread");
+    }
+
+    if(per_day_thread_id) { /* append per_day_thread_id if used */
+        thread_list[threads++]=per_day_thread_id;
+        s_log(LOG_DEBUG, "Terminating the per-day thread");
     }
 #endif /* NO_OPENSSLOFF */
     CRYPTO_THREAD_unlock(stunnel_locks[LOCK_THREAD_LIST]);
@@ -367,6 +377,7 @@ void daemon_loop(void) {
         s_log(LOG_CRIT, "Failed to start exec+connect services");
         exit(1);
     }
+    s_log(LOG_INFO, "Accepting new connections");
     while(1) {
         int temporary_lack_of_resources=0;
         int num=s_poll_wait(fds, -1, -1);
@@ -451,7 +462,6 @@ NOEXPORT int accept_connection(SERVICE_OPTIONS *opt, unsigned i) {
 #endif
     if(create_client(fd, s, alloc_client_session(opt, s, s))) {
         s_log(LOG_ERR, "Connection rejected: create_client failed");
-        closesocket(s);
 #ifndef USE_FORK
         service_free(opt);
 #endif
@@ -507,7 +517,7 @@ NOEXPORT void unbind_ports(void) {
             /* FIXME: this is just a crude workaround   */
             /*        is it better to kill the service? */
             /* FIXME: this won't work with FORK threads */
-            opt->option.retry=0;
+            opt->retry=-1; /* disable */
         }
 
         s_log(LOG_DEBUG, "Service [%s] closed", opt->servname);
@@ -594,7 +604,7 @@ NOEXPORT int bind_ports(void) {
             s_log(LOG_DEBUG, "Skipped exec+connect service [%s]", opt->servname);
 #ifndef OPENSSL_NO_TLSEXT
         } else if(!opt->option.client && opt->sni) {
-            s_log(LOG_DEBUG, "Skipped SNI slave service [%s]", opt->servname);
+            s_log(LOG_DEBUG, "Skipped SNI secondary service [%s]", opt->servname);
 #endif
         } else { /* each service must define two endpoints */
             s_log(LOG_ERR, "Invalid service [%s]", opt->servname);

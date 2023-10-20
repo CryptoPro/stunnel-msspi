@@ -136,7 +136,8 @@ A port number.
 
 =item *
 
-A colon-separated pair of IP address (either IPv4, IPv6, or domain name) and port number.
+A colon-separated pair of IP address (either IPv4, IPv6, or domain name) and
+port number.
 
 =item *
 
@@ -156,7 +157,8 @@ B<chroot> keeps B<stunnel> in a chrooted jail.  I<CApath>, I<CRLpath>, I<pid>
 and I<exec> are located inside the jail and the patches have to be relative
 to the directory specified with B<chroot>.
 
-Several functions of the operating system also need their files to be located within the chroot jail, e.g.:
+Several functions of the operating system also need their files to be located
+within the chroot jail, e.g.:
 
 =over 4
 
@@ -186,13 +188,18 @@ Deflate is the standard compression method as described in RFC 1951.
 
 debugging level
 
-Level is one of the syslog level names or numbers
-emerg (0), alert (1), crit (2), err (3), warning (4), notice (5),
-info (6), or debug (7).  All logs for the specified level and
-all levels numerically less than it will be shown.  Use I<debug = debug> or
-I<debug = 7> for greatest debugging output.  The default is notice (5).
+Level is one of the syslog level names or numbers emerg (0), alert (1),
+crit (2), err (3), warning (4), notice (5), info (6), or debug (7).  All logs
+for the specified level and all levels numerically less than it will be shown.
 
-The syslog facility 'daemon' will be used unless a facility name is supplied.
+The I<debug = debug> (or the equivalent <debug = 7>) level produces for the
+most verbose log output.  This logging level is only meant to be understood by
+stunnel developers, and not by users.  Please either use the debug level when
+requested to do so by an stunnel developer, or when you intend to get confused.
+
+The default logging level is notice (5).
+
+The syslog 'daemon' facility will be used unless a facility name is supplied.
 (Facilities are not supported on Win32.)
 
 Case is ignored for both facilities and levels.
@@ -210,7 +217,8 @@ select hardware or software cryptographic engine
 
 default: software-only cryptography
 
-See Examples section for an engine configuration to use the certificate and the corresponding private key from a cryptographic device.
+See Examples section for an engine configuration to use the certificate and the
+corresponding private key from a cryptographic device.
 
 =item B<engineCtrl> = COMMAND[:PARAMETER]
 
@@ -271,8 +279,8 @@ pixel image.
 
 log file handling
 
-This option allows you to choose whether the log file (specified with the I<output>
-option) is appended or overwritten when opened or re-opened.
+This option allows you to choose whether the log file (specified with the
+I<output> option) is appended or overwritten when opened or re-opened.
 
 default: append
 
@@ -357,26 +365,38 @@ To listen on all IPv6 addresses use:
 
     accept = :::PORT
 
-=item B<CApath> = DIRECTORY
+=item B<CAengine> = ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER
 
-Certificate Authority directory
+load a trusted CA certificate from an engine
 
-This is the directory in which B<stunnel> will look for certificates when using
-the I<verifyChain> or I<verifyPeer> options.  Note that the certificates in
-this directory should be named XXXXXXXX.0 where XXXXXXXX is the hash value of
-the DER encoded subject of the cert.
+The loaded CA certificates will be used with the I<verifyChain> and
+I<verifyPeer> options.
+
+Multiple I<CAengine> options are allowed in a single service section.
+
+Currently supported engines: pkcs11, cng.
+
+=item B<CApath> = CA_DIRECTORY
+
+load trusted CA certificates from a directory
+
+The loaded CA certificates will be used with the I<verifyChain> and
+I<verifyPeer> options.
+Note that the certificates in this directory should be named XXXXXXXX.0 where
+XXXXXXXX is the hash value of the DER encoded subject of the cert.
 
 The hash algorithm has been changed in B<OpenSSL 1.0.0>.  It is required to
-c_rehash the directory on upgrade from B<OpenSSL 0.x.x> to B<OpenSSL 1.x.x>.
+c_rehash the directory on upgrade from B<OpenSSL 0.x.x> to B<OpenSSL 1.x.x>
+or later.
 
 I<CApath> path is relative to the I<chroot> directory if specified.
 
 =item B<CAfile> = CA_FILE
 
-Certificate Authority file
+load trusted CA certificates from a file
 
-This file contains multiple CA certificates, to be used with the I<verifyChain>
-and I<verifyPeer> options.
+The loaded CA certificates will be used with the I<verifyChain> and
+I<verifyPeer> options.
 
 =item B<cert> = CERT_FILE
 
@@ -395,33 +415,37 @@ engine is enabled.
 
 =item B<checkEmail> = EMAIL
 
-email address of the peer certificate subject
+verify the email address of the end-entity (leaf) peer certificate subject
+
+Certificates are accepted if no subject checks were specified, or the email
+address of the end-entity (leaf) peer certificate matches any of the email
+addresses specified with I<checkEmail>.
 
 Multiple I<checkEmail> options are allowed in a single service section.
-Certificates are accepted if no subject checks were specified, or the email
-address of the peer certificate matches any of the email addresses specified
-with I<checkEmail>.
 
 This option requires OpenSSL 1.0.2 or later.
 
 =item B<checkHost> = HOST
 
-host of the peer certificate subject
+verify the host of the end-entity (leaf) peer certificate subject
+
+Certificates are accepted if no subject checks were specified, or the host name
+of the end-entity (leaf) peer certificate matches any of the hosts specified
+with I<checkHost>.
 
 Multiple I<checkHost> options are allowed in a single service section.
-Certificates are accepted if no subject checks were specified, or the host name
-of the peer certificate matches any of the hosts specified with I<checkHost>.
 
 This option requires OpenSSL 1.0.2 or later.
 
 =item B<checkIP> = IP
 
-IP address of the peer certificate subject
+verify the IP address of the end-entity (leaf) peer certificate subject
+
+Certificates are accepted if no subject checks were specified, or the IP
+address of the end-entity (leaf) peer certificate matches any of the IP
+addresses specified with I<checkIP>.
 
 Multiple I<checkIP> options are allowed in a single service section.
-Certificates are accepted if no subject checks were specified, or the IP
-address of the peer certificate matches any of the IP addresses specified with
-I<checkIP>.
 
 This option requires OpenSSL 1.0.2 or later.
 
@@ -461,7 +485,8 @@ I<SSL_CONF_cmd(3ssl)> manual page.
 
 Several I<config> lines can be used to specify multiple configuration commands.
 
-Use I<curves> option instead of enabling I<config = Curves:list_curves> to support elliptic curves.
+Use I<curves> option instead of enabling I<config = Curves:list_curves> to
+support elliptic curves.
 
 This option requires OpenSSL 1.0.2 or later.
 
@@ -472,7 +497,6 @@ connect to a remote address
 If no host is specified, the host defaults to localhost.
 
 Multiple I<connect> options are allowed in a single service section.
-
 If host resolves to multiple addresses and/or if multiple I<connect>
 options are specified, then the remote address is chosen using a
 round-robin algorithm.
@@ -629,7 +653,8 @@ use IDENT (RFC 1413) username checking
 
 include all configuration file parts located in DIRECTORY
 
-The files are included in the ascending alphabetical order of their names. The recommended filename convention is
+The files are included in the ascending alphabetical order of their names. The
+recommended filename convention is
 
 for global options:
 
@@ -669,7 +694,7 @@ remote connections.  Use this option to bind a static local IP address instead.
 
 =item B<OCSP> = URL
 
-select OCSP responder for certificate verification
+select OCSP responder for the end-entity (leaf) peer certificate verification
 
 =item B<OCSPaia> = yes | no
 
@@ -696,6 +721,16 @@ This option protects the OCSP protocol against replay attacks.  Due to its
 computational overhead, the nonce extension is usually only supported on
 internal (e.g. corporate) responders, and not on public OCSP responders.
 
+=item B<OCSPrequire> = yes | no
+
+require a conclusive OCSP response
+
+Disable this option to allow a connection even though no conclusive OCSP
+response was retrieved from stapling and a direct request to the OCSP
+responder.
+
+default: yes
+
 =item B<options> = SSL_OPTIONS
 
 B<OpenSSL> library options
@@ -719,8 +754,8 @@ default:
     options = NO_SSLv2
     options = NO_SSLv3
 
-Use I<sslVersionMax> or I<sslVersionMin> option instead of disabling specific TLS protocol
-versions when compiled with B<OpenSSL 1.1.0> or later.
+Use I<sslVersionMax> or I<sslVersionMin> option instead of disabling specific
+TLS protocol versions when compiled with B<OpenSSL 1.1.0> or later.
 
 =item B<protocol> = PROTO
 
@@ -913,9 +948,12 @@ This option is not supported on some platforms.
 
 default: yes
 
-=item B<retry> = yes | no
+=item B<retry> = yes | no | DELAY
 
 reconnect a connect+exec section after it was disconnected
+
+The DELAY value specifies the number of milliseconds before retrying.
+"retry = yes" has the same effect as "retry = 1000".
 
 default: no
 
@@ -933,23 +971,39 @@ Everything is permitted.
 
 =item level 1
 
-The security level corresponds to a minimum of 80 bits of security. Any parameters offering below 80 bits of security are excluded. As a result RSA, DSA and DH keys shorter than 1024 bits and ECC keys shorter than 160 bits are prohibited. All export cipher suites are prohibited since they all offer less than 80 bits of security. SSL version 2 is prohibited. Any cipher suite using MD5 for the MAC is also prohibited.
+The security level corresponds to a minimum of 80 bits of security. Any
+parameters offering below 80 bits of security are excluded. As a result RSA,
+DSA and DH keys shorter than 1024 bits and ECC keys shorter than 160 bits are
+prohibited. All export cipher suites are prohibited since they all offer less
+than 80 bits of security. SSL version 2 is prohibited. Any cipher suite using
+MD5 for the MAC is also prohibited.
 
 =item level 2
 
-Security level set to 112 bits of security. As a result RSA, DSA and DH keys shorter than 2048 bits and ECC keys shorter than 224 bits are prohibited. In addition to the level 1 exclusions any cipher suite using RC4 is also prohibited. SSL version 3 is also not allowed. Compression is disabled.
+Security level set to 112 bits of security. As a result RSA, DSA and DH keys
+shorter than 2048 bits and ECC keys shorter than 224 bits are prohibited. In
+addition to the level 1 exclusions any cipher suite using RC4 is also
+prohibited. SSL version 3 is also not allowed. Compression is disabled.
 
 =item level 3
 
-Security level set to 128 bits of security. As a result RSA, DSA and DH keys shorter than 3072 bits and ECC keys shorter than 256 bits are prohibited. In addition to the level 2 exclusions cipher suites not offering forward secrecy are prohibited. TLS versions below 1.1 are not permitted. Session tickets are disabled.
+Security level set to 128 bits of security. As a result RSA, DSA and DH keys
+shorter than 3072 bits and ECC keys shorter than 256 bits are prohibited. In
+addition to the level 2 exclusions cipher suites not offering forward secrecy
+are prohibited. TLS versions below 1.1 are not permitted. Session tickets are
+disabled.
 
 =item level 4
 
-Security level set to 192 bits of security. As a result RSA, DSA and DH keys shorter than 7680 bits and ECC keys shorter than 384 bits are prohibited. Cipher suites using SHA1 for the MAC are prohibited. TLS versions below 1.2 are not permitted.
+Security level set to 192 bits of security. As a result RSA, DSA and DH keys
+shorter than 7680 bits and ECC keys shorter than 384 bits are prohibited.
+Cipher suites using SHA1 for the MAC are prohibited. TLS versions below 1.2 are
+not permitted.
 
 =item level 5
 
-Security level set to 256 bits of security. As a result RSA, DSA and DH keys shorter than 15360 bits and ECC keys shorter than 512 bits are prohibited.
+Security level set to 256 bits of security. As a result RSA, DSA and DH keys
+shorter than 15360 bits and ECC keys shorter than 512 bits are prohibited.
 
 =item default: 2
 
@@ -972,9 +1026,11 @@ default: no
 
 Unix group id
 
-As a global option: setgid() to the specified group in daemon mode and clear all other groups.
+As a global option: setgid() to the specified group in daemon mode and clear
+all other groups.
 
-As a service-level option: set the group of the Unix socket specified with "accept".
+As a service-level option: set the group of the Unix socket specified with
+"accept".
 
 =item B<setuid> = USER (Unix only)
 
@@ -982,7 +1038,8 @@ Unix user id
 
 As a global option: setuid() to the specified user in daemon mode.
 
-As a service-level option: set the owner of the Unix socket specified with "accept".
+As a service-level option: set the owner of the Unix socket specified with
+"accept".
 
 =item B<sessionCacheSize> = NUM_ENTRIES
 
@@ -1012,26 +1069,26 @@ address of sessiond TLS cache server
 
 =item B<sni> = SERVICE_NAME:SERVER_NAME_PATTERN (server mode)
 
-Use the service as a slave service (a name-based virtual server) for Server
+Use the service as a secondary service (a name-based virtual server) for Server
 Name Indication TLS extension (RFC 3546).
 
-I<SERVICE_NAME> specifies the master service that accepts client connections
+I<SERVICE_NAME> specifies the primary service that accepts client connections
 with the I<accept> option.  I<SERVER_NAME_PATTERN> specifies the host name to
 be redirected.  The pattern may start with the '*' character, e.g.
-'*.example.com'.  Multiple slave services are normally specified for a single
-master service.  The I<sni> option can also be specified more than once within
-a single slave service.
+'*.example.com'.  Multiple secondary services are normally specified for
+a single primary service.  The I<sni> option can also be specified more than
+once within a single secondary service.
 
-This service, as well as the master service, may not be configured in client
+This service, as well as the primary service, may not be configured in client
 mode.
 
-The I<connect> option of the slave service is ignored when the I<protocol>
+The I<connect> option of the secondary service is ignored when the I<protocol>
 option is specified, as I<protocol> connects to the remote host before TLS
 handshake.
 
-Libwrap checks (Unix only) are performed twice: with the master service name
-after TCP connection is accepted, and with the slave service name during the
-TLS handshake.
+Libwrap checks (Unix only) are performed twice: with the primary service name
+after TCP connection is accepted, and with the secondary service name during
+the TLS handshake.
 
 The I<sni> option is only available when compiled with B<OpenSSL 1.0.0> and
 later.
@@ -1099,7 +1156,8 @@ linked OpenSSL library.
 
 Availability of specific protocols depends on the linked OpenSSL library.
 
-The I<sslVersionMax> option is only available when compiled with B<OpenSSL 1.1.0> and later.
+The I<sslVersionMax> option is only available when compiled with
+B<OpenSSL 1.1.0> and later.
 
 default: all
 
@@ -1114,7 +1172,8 @@ linked OpenSSL library.
 
 Availability of specific protocols depends on the linked OpenSSL library.
 
-The I<sslVersionMin> option is only available when compiled with B<OpenSSL 1.1.0> and later.
+The I<sslVersionMin> option is only available when compiled with
+B<OpenSSL 1.1.0> and later.
 
 default: TLSv1
 
@@ -1175,11 +1234,15 @@ time to wait for close_notify (set to 0 for buggy MSIE)
 
 =item B<TIMEOUTconnect> = SECONDS
 
-time to wait to connect to a remote host
+time to wait to connect a remote host
 
 =item B<TIMEOUTidle> = SECONDS
 
 time to keep an idle connection
+
+=item B<TIMEOUTocsp> = SECONDS
+
+time to wait to connect an OCSP responder
 
 =item B<transparent> = none | source | destination | both (Unix only)
 
@@ -1301,23 +1364,25 @@ and I<verifyPeer> options.
 
 =item level 0
 
-Request and ignore the peer certificate.
+Request and ignore the peer certificate chain.
 
 =item level 1
 
-Verify the peer certificate if present.
+Verify the peer certificate chain if present.
 
 =item level 2
 
-Verify the peer certificate.
+Verify the peer certificate chain.
 
 =item level 3
 
-Verify the peer against a locally installed certificate.
+Verify the peer certificate chain and the end-entity (leaf) peer certificate
+against a locally installed certificate.
 
 =item level 4
 
-Ignore the chain and only verify the peer certificate.
+Ignore the peer certificate chain and only verify the end-entity (leaf) peer
+certificate against a locally installed certificate.
 
 =item default
 
@@ -1339,9 +1404,9 @@ default: no
 
 =item B<verifyPeer> = yes | no
 
-verify the peer certificate
+verify the end-entity (leaf) peer certificate
 
-The peer certificate needs to be stored either in the file
+The end-entity (leaf) peer certificate needs to be stored either in the file
 specified with I<CAfile>, or in the directory specified with I<CApath>.
 
 default: no
@@ -1479,19 +1544,19 @@ Now test your configuration on the client machine with:
 An example server mode SNI configuration:
 
     [virtual]
-    ; master service
+    ; primary service
     accept = 443
     cert =  default.pem
     connect = default.internal.mydomain.com:8080
 
     [sni1]
-    ; slave service 1
+    ; secondary service 1
     sni = virtual:server1.mydomain.com
     cert = server1.pem
     connect = server1.internal.mydomain.com:8081
 
     [sni2]
-    ; slave service 2
+    ; secondary service 2
     sni = virtual:server2.mydomain.com
     cert = server2.pem
     connect = server2.internal.mydomain.com:8082
@@ -1511,7 +1576,8 @@ The client key is automatically selected based on the list of CAs trusted by the
     accept = 127.0.0.1:8080
     connect = example.com:8443
 
-An example of advanced engine configuration to use the certificate and the corresponding private key from a pkcs11 engine:
+An example of advanced engine configuration to use the certificate and the
+corresponding private key from a pkcs11 engine:
 
     engine = pkcs11
     engineCtrl = MODULE_PATH:opensc-pkcs11.so
@@ -1525,7 +1591,8 @@ An example of advanced engine configuration to use the certificate and the corre
     cert = pkcs11:token=MyToken;object=MyCert
     key = pkcs11:token=MyToken;object=MyKey
 
-An example of advanced engine configuration to use the certificate and the corresponding private key from a SoftHSM token:
+An example of advanced engine configuration to use the certificate and the
+corresponding private key from a SoftHSM token:
 
     engine = pkcs11
     engineCtrl = MODULE_PATH:softhsm2.dll

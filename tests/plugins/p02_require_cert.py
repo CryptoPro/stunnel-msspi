@@ -2,7 +2,7 @@
 
 import logging
 import pathlib
-from plugin_collection import Plugin
+from plugin_collection import Plugin, ERR_CONN_RESET
 from maketest import (
     Config,
     StunnelAcceptConnect
@@ -34,7 +34,7 @@ class RequireCertTest(StunnelTest):
             "unsupported protocol",
             "TLS accepted: previous session reused",
             "Redirecting connection",
-            "Connection reset by peer",
+            ERR_CONN_RESET,
             "Connection lost",
             "Client received unexpected message",
             "Server received unexpected message",
@@ -48,7 +48,6 @@ class RequireCertTest(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel server."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no
@@ -74,7 +73,9 @@ class FailureRequireCertTest(StunnelTest):
         self.params.description = '022. Failure test \"requireCert\" option'
         self.events.count = 1
         self.events.success = [
-            "peer did not return a certificate"
+            "peer did not return a certificate",
+            "alert certificate required",
+            ERR_CONN_RESET
         ]
         self.events.failure = [
             #"peer did not return a certificate",
@@ -83,7 +84,7 @@ class FailureRequireCertTest(StunnelTest):
             "unsupported protocol",
             "TLS accepted: previous session reused",
             "Redirecting connection",
-            #"Connection reset by peer",
+            #ERR_CONN_RESET,
             #"Connection lost",
             #"Client received unexpected message",
             "Server received unexpected message",
@@ -97,7 +98,6 @@ class FailureRequireCertTest(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel server."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no

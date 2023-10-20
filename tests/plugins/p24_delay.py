@@ -3,7 +3,7 @@
 import logging
 import os
 import pathlib
-from plugin_collection import Plugin
+from plugin_collection import Plugin, ERR_CONN_RESET
 from maketest import (
     Config,
     ClientConnectExec
@@ -50,7 +50,7 @@ class RetryDelay(StunnelTest):
             "unsupported protocol",
             #"TLS accepted: previous session reused",
             "Redirecting connection",
-            "Connection reset by peer",
+            ERR_CONN_RESET,
             "Connection lost",
             "Client received unexpected message",
             "Server received unexpected message",
@@ -65,13 +65,12 @@ class RetryDelay(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel client."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no
 
     delay = yes
-    retry = yes
+    retry = 10
 
     [{service}]
     client = yes
@@ -92,7 +91,6 @@ class RetryDelay(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel server."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no
@@ -132,7 +130,7 @@ class RetryNoDelay(StunnelTest):
             "unsupported protocol",
             #"TLS accepted: previous session reused",
             "Redirecting connection",
-            "Connection reset by peer",
+            ERR_CONN_RESET,
             "Connection lost",
             "Client received unexpected message",
             "Server received unexpected message",
@@ -147,14 +145,13 @@ class RetryNoDelay(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel client."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no
 
     delay = no
     failover = rr
-    retry = yes
+    retry = 10
 
     [{service}]
     client = yes
@@ -175,7 +172,6 @@ class RetryNoDelay(StunnelTest):
     ) -> pathlib.Path:
         """Create a configuration file for a stunnel server."""
         contents = f"""
-    pid = {cfg.tempd}/stunnel_{service}.pid
     foreground = yes
     debug = debug
     syslog = no

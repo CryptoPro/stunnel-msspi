@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -39,8 +39,14 @@
 
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
 #define DEFAULT_CURVES "X25519:P-256:X448:P-521:P-384"
+#ifdef SSL_SYSTEM_DEFAULT_CIPHER_LIST /* Red Hat OpenSSL */
+#define DEFAULT_CURVES_FIPS "P-256:P-521:P-384"
+#else /* standard OpenSSL */
+#define DEFAULT_CURVES_FIPS DEFAULT_CURVES
+#endif /* Red Hat OpenSSL */
 #else /* OpenSSL version < 1.1.1 */
 #define DEFAULT_CURVES "prime256v1"
+#define DEFAULT_CURVES_FIPS DEFAULT_CURVES
 #endif /* OpenSSL version >= 1.1.1 */
 
 #if defined(_WIN32_WCE) && !defined(CONFDIR)
@@ -322,6 +328,8 @@ static const char *option_not_found=
 
 static const char *stunnel_cipher_list=
     "HIGH:!aNULL:!SSLv2:!DH:!kDHEPSK";
+static const char *fips_cipher_list=
+    "FIPS:!DH:!kDHEPSK";
 
 #ifndef OPENSSL_NO_TLS1_3
 static const char *stunnel_ciphersuites=
@@ -459,7 +467,7 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
             print_syntax();
             return 1;
         }
-        df=file_fdopen(fd);
+        df=file_fdopen(fd, FILE_MODE_READ);
     } else
 #endif
         df=file_open(path, FILE_MODE_READ);
@@ -694,8 +702,9 @@ void service_free(SERVICE_OPTIONS *section) {
 #endif
     if(ref<0)
         fatal("Negative section reference counter");
-    if(ref==0)
+    if(ref==0) {
         parse_service_option(CMD_FREE, &section, NULL, NULL);
+    }
 }
 
 /**************************************** global options */
@@ -965,6 +974,34 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
     case CMD_PRINT_HELP:
         s_log(LOG_NOTICE, "%-22s = yes|quiet|no foreground mode (don't fork, log to stderr)",
             "foreground");
+        break;
+    }
+#else
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        break;
+    case CMD_SET_COPY: /* not used for global options */
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "foreground"))
+            break;
+        if(!strcasecmp(arg, "yes")) {
+            /* ignore */
+        } else if(!strcasecmp(arg, "quiet")) {
+            /* ignore */
+        } else if(!strcasecmp(arg, "no")) {
+            return "The argument needs to be 'yes' or 'quiet'";
+        } else
+            return "The argument needs to be 'yes' or 'quiet'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = foreground mode", "foreground");
         break;
     }
 #endif
@@ -1268,6 +1305,29 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
             "syslog");
         break;
     }
+#else
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        break;
+    case CMD_SET_COPY: /* not used for global options */
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "syslog"))
+            break;
+        if(strcasecmp(arg, "no"))
+            return "The argument needs to be 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = unused syslog",
+            "syslog");
+        break;
+    }
 #endif
 
     /* taskbar */
@@ -1400,6 +1460,35 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             "accept");
         break;
     }
+
+#ifndef OPENSSL_NO_ENGINE
+    /* CAengine */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->ca_engine=NULL;
+        break;
+    case CMD_SET_COPY:
+        name_list_dup(&section->ca_engine,
+            new_service_options.ca_engine);
+        break;
+    case CMD_FREE:
+        name_list_free(section->ca_engine);
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "CAengine"))
+            break;
+        name_list_append(&section->ca_engine, arg);
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = engine-specific CA certificate identifier for 'verify' option",
+            "CAengine");
+        break;
+    }
+#endif /* !OPENSSL_NO_ENGINE */
 
     /* CApath */
     switch(cmd) {
@@ -1626,7 +1715,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
              * section->cipher_list is no longer NULL in sections */
 #ifdef USE_FIPS
             if(new_global_options.option.fips)
-                section->cipher_list=str_dup_detached("FIPS");
+                section->cipher_list=str_dup_detached(fips_cipher_list);
             else
 #endif /* USE_FIPS */
                 section->cipher_list=str_dup_detached(stunnel_cipher_list);
@@ -1636,7 +1725,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_PRINT_DEFAULTS:
         if(fips_available()) {
             s_log(LOG_NOTICE, "%-22s = %s %s", "ciphers",
-                "FIPS", "(with \"fips = yes\")");
+                fips_cipher_list, "(with \"fips = yes\")");
             s_log(LOG_NOTICE, "%-22s = %s %s", "ciphers",
                 stunnel_cipher_list, "(with \"fips = no\")");
         } else {
@@ -2064,7 +2153,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     /* curves */
     switch(cmd) {
     case CMD_SET_DEFAULTS:
-        section->curves=str_dup_detached(DEFAULT_CURVES);
+        section->curves = NULL;
         break;
     case CMD_SET_COPY:
         section->curves=str_dup_detached(new_service_options.curves);
@@ -2079,9 +2168,26 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->curves=str_dup_detached(arg);
         return NULL; /* OK */
     case CMD_INITIALIZE:
+        if(!section->curves) {
+            /* this is only executed for global options, because
+             * section->curves is no longer NULL in sections */
+#ifdef USE_FIPS
+            if(new_global_options.option.fips)
+                section->curves=str_dup_detached(DEFAULT_CURVES_FIPS);
+            else
+#endif /* USE_FIPS */
+                section->curves=str_dup_detached(DEFAULT_CURVES);
+        }
         break;
     case CMD_PRINT_DEFAULTS:
-        s_log(LOG_NOTICE, "%-22s = %s", "curves", DEFAULT_CURVES);
+        if(fips_available()) {
+            s_log(LOG_NOTICE, "%-22s = %s %s", "curves",
+                DEFAULT_CURVES_FIPS, "(with \"fips = yes\")");
+            s_log(LOG_NOTICE, "%-22s = %s %s", "curves",
+                DEFAULT_CURVES, "(with \"fips = no\")");
+        } else {
+            s_log(LOG_NOTICE, "%-22s = %s", "curves", DEFAULT_CURVES);
+        }
         break;
     case CMD_PRINT_HELP:
         s_log(LOG_NOTICE, "%-22s = ECDH curve names", "curves");
@@ -2522,6 +2628,9 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->ocsp_url=str_dup_detached(arg);
         return NULL; /* OK */
     case CMD_INITIALIZE:
+        if((section->ocsp_url || section->option.aia) &&
+                !section->option.verify_chain)
+            return "\"verifyChain\" has to be enabled for OCSP support";
         break;
     case CMD_PRINT_DEFAULTS:
         break;
@@ -2621,6 +2730,37 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     }
 
+    /* OCSPrequire */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->option.ocsp_require=1; /* enabled by default */
+        break;
+    case CMD_SET_COPY:
+        section->option.ocsp_require=new_service_options.option.ocsp_require;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "OCSPrequire"))
+            break;
+        if(!strcasecmp(arg, "yes"))
+            section->option.ocsp_require=1;
+        else if(!strcasecmp(arg, "no"))
+            section->option.ocsp_require=0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE,
+            "%-22s = yes|no require a conclusive OCSP response",
+            "OCSPrequire");
+        break;
+    }
+
 #endif /* !defined(OPENSSL_NO_OCSP) */
 
     /* options */
@@ -2687,11 +2827,11 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->protocol=str_dup_detached(arg);
         return NULL; /* OK */
     case CMD_INITIALIZE:
-        /* PROTOCOL_CHECK also initializes:
+        /* protocol_init() also initializes:
            section->option.connect_before_ssl
            section->option.protocol_endpoint */
         {
-            const char *tmp_str=protocol(NULL, section, PROTOCOL_CHECK);
+            const char *tmp_str=protocol_init(section);
             if(tmp_str)
                 return tmp_str;
         }
@@ -3128,22 +3268,26 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     /* retry */
     switch(cmd) {
     case CMD_SET_DEFAULTS:
-        section->option.retry=0;
+        section->retry=-1;
         break;
     case CMD_SET_COPY:
-        section->option.retry=new_service_options.option.retry;
+        section->retry=new_service_options.retry;
         break;
     case CMD_FREE:
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "retry"))
             break;
-        if(!strcasecmp(arg, "yes"))
-            section->option.retry=1;
-        else if(!strcasecmp(arg, "no"))
-            section->option.retry=0;
-        else
-            return "The argument needs to be either 'yes' or 'no'";
+        if(!strcasecmp(arg, "yes")) {
+            section->retry=1000; /* 1 second */
+        } else if(!strcasecmp(arg, "no")) {
+            section->retry=-1; /* disabled */
+        } else {
+            char *tmp_str;
+            section->retry=(long)strtol(arg, &tmp_str, 10);
+            if(tmp_str==arg || *tmp_str || section->retry < 0)
+                return "Illegal retry delay";
+        }
         return NULL; /* OK */
     case CMD_INITIALIZE:
         break;
@@ -3448,7 +3592,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_PRINT_DEFAULTS:
         break;
     case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = master_service:host_name for an SNI virtual service",
+        s_log(LOG_NOTICE, "%-22s = primary_service:host_name for an SNI virtual service",
             "sni");
         break;
     }
@@ -3552,7 +3696,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     /* sslVersionMin */
     switch(cmd) {
     case CMD_SET_DEFAULTS:
-        section->min_proto_version=TLS1_VERSION;
+        section->min_proto_version=0; /* lowest supported */
         break;
     case CMD_SET_COPY:
         section->min_proto_version=new_service_options.min_proto_version;
@@ -3857,6 +4001,36 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     }
 
+    /* TIMEOUTocsp */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->timeout_ocsp=5; /* 5 seconds */
+        break;
+    case CMD_SET_COPY:
+        section->timeout_ocsp=new_service_options.timeout_ocsp;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "TIMEOUTocsp"))
+            break;
+        {
+            char *tmp_str;
+            section->timeout_ocsp=(int)strtol(arg, &tmp_str, 5);
+            if(tmp_str==arg || *tmp_str) /* not a number */
+                return "Illegal OCSP connect timeout";
+        }
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = %d seconds", "TIMEOUTocsp", 5);
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = seconds to connect OCSP responder", "TIMEOUTocsp");
+        break;
+    }
+
     /* transparent */
 #ifndef USE_WIN32
     switch(cmd) {
@@ -3935,9 +4109,16 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         }
         else
 #endif
+
+#ifndef OPENSSL_NO_ENGINE
+        if((section->option.verify_chain || section->option.verify_peer) &&
+                !section->ca_engine && !section->ca_file && !section->ca_dir)
+            return "Either \"CAengine\", \"CAfile\" or \"CApath\" has to be configured";
+#else
         if((section->option.verify_chain || section->option.verify_peer) &&
                 !section->ca_file && !section->ca_dir)
             return "Either \"CAfile\" or \"CApath\" has to be configured";
+#endif
         break;
     case CMD_PRINT_DEFAULTS:
         s_log(LOG_NOTICE, "%-22s = none", "verify");
@@ -4027,6 +4208,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             SSL_SESSION_free(section->session);
         if(section->ctx)
             SSL_CTX_free(section->ctx);
+        context_cleanup(section);
 #endif /* NO_OPENSSLOFF */
         str_free(section->servname);
         if(section==&service_options || section==&new_service_options)
@@ -4093,7 +4275,7 @@ NOEXPORT const char *sni_init(SERVICE_OPTIONS *section) {
         if(!tmpsrv)
             return "SNI section name not found";
         if(tmpsrv->option.client)
-            return "SNI master service is a TLS client";
+            return "SNI primary service is a TLS client";
         if(tmpsrv->servername_list_tail) {
             tmpsrv->servername_list_tail->next=str_alloc_detached(sizeof(SERVERNAME_LIST));
             tmpsrv->servername_list_tail=tmpsrv->servername_list_tail->next;
@@ -4104,7 +4286,7 @@ NOEXPORT const char *sni_init(SERVICE_OPTIONS *section) {
             tmpsrv->ssl_options_set|=
                 SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
         }
-        /* a slave section reference is needed to prevent a race condition
+        /* a secondary section reference is needed to prevent a race condition
            while switching to a section after configuration file reload */
         service_up_ref(section);
         tmpsrv->servername_list_tail->servername=str_dup_detached(tmp_str);
@@ -4141,7 +4323,7 @@ NOEXPORT void sni_free(SERVICE_OPTIONS *section) {
     while(curr) {
         SERVERNAME_LIST *next=curr->next;
         str_free(curr->servername);
-        service_free(curr->opt); /* free the slave section */
+        service_free(curr->opt); /* free the secondary section */
         str_free(curr);
         curr=next;
     }
@@ -4908,25 +5090,43 @@ NOEXPORT const char *engine_auto(void) {
 }
 
 NOEXPORT const char *engine_open(const char *name) {
+    ENGINE *e;
+    struct {
+        void (*vlog)(int, const char *, va_list);
+    } vlog_callback;
+
     engine_init(); /* initialize the previous engine (if any) */
     if(++current_engine>=MAX_ENGINES)
         return "Too many open engines";
+
     s_log(LOG_DEBUG, "Enabling support for engine \"%s\"", name);
-    engines[current_engine]=ENGINE_by_id(name);
-    if(!engines[current_engine]) {
+    e=ENGINE_by_id(name);
+    if(!e) {
         sslerror("ENGINE_by_id");
         return "Failed to open the engine";
     }
     engine_initialized=0;
-    if(ENGINE_ctrl(engines[current_engine], ENGINE_CTRL_SET_USER_INTERFACE,
-            0, ui_stunnel(), NULL)) {
+
+    vlog_callback.vlog=&s_vlog;
+    if(ENGINE_ctrl_cmd(e, "VLOG_A", 0, &vlog_callback, NULL, 0)) {
+        s_log(LOG_NOTICE, "Logging initialized on engine #%d (%s)",
+            current_engine+1, ENGINE_get_id(e));
+    } else {
+        ERR_clear_error();
+        s_log(LOG_INFO, "Logging not supported by engine #%d (%s)",
+            current_engine+1, ENGINE_get_id(e));
+    }
+
+    if(ENGINE_ctrl(e, ENGINE_CTRL_SET_USER_INTERFACE, 0, ui_stunnel(), NULL)) {
         s_log(LOG_NOTICE, "UI set for engine #%d (%s)",
-            current_engine+1, ENGINE_get_id(engines[current_engine]));
+            current_engine+1, ENGINE_get_id(e));
     } else {
         ERR_clear_error();
         s_log(LOG_INFO, "UI not supported by engine #%d (%s)",
-            current_engine+1, ENGINE_get_id(engines[current_engine]));
+            current_engine+1, ENGINE_get_id(e));
     }
+
+    engines[current_engine]=e;
     return NULL; /* OK */
 }
 

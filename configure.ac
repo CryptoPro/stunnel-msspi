@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([stunnel],[5.65])
+AC_INIT([stunnel],[5.71])
 AC_MSG_NOTICE([**************************************** initialization])
 AC_CONFIG_AUX_DIR(auto)
 AC_CONFIG_MACRO_DIR([m4])
@@ -10,13 +10,13 @@ AM_INIT_AUTOMAKE([foreign])
 
 AC_CANONICAL_HOST
 AC_SUBST([host])
-AC_DEFINE_UNQUOTED([HOST], ["$host"], [Host description])
+AC_DEFINE_UNQUOTED([HOST], ["${host}"], [Host description])
 define([esc], [`echo ]$1[ | tr abcdefghijklmnopqrstuvwxyz.- ABCDEFGHIJKLMNOPQRSTUVWXYZ__ | tr -dc ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_`])
-AC_DEFINE_UNQUOTED(esc(CPU_$host_cpu))
-AC_DEFINE_UNQUOTED(esc(VENDOR_$host_vendor))
-AC_DEFINE_UNQUOTED(esc(OS_$host_os))
+AC_DEFINE_UNQUOTED(esc(CPU_${host_cpu}))
+AC_DEFINE_UNQUOTED(esc(VENDOR_${host_vendor}))
+AC_DEFINE_UNQUOTED(esc(OS_${host_os}))
 
-case "$host_os" in
+case "${host_os}" in
 *darwin*)
     # OSX does not declare ucontext without _XOPEN_SOURCE
     AC_DEFINE([_XOPEN_SOURCE], [500], [Use X/Open 5 with POSIX 1995])
@@ -36,13 +36,25 @@ AC_PROG_MAKE_SET
 # silent build by default
 ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
+AC_MSG_NOTICE([**************************************** bash completion])
+# define a dummy PKG_CHECK_VAR if pkg-config is not installed
+m4_ifndef([PKG_CHECK_VAR], [AC_DEFUN([PKG_CHECK_VAR], [false])])
+
+AC_ARG_WITH([bashcompdir],
+    AS_HELP_STRING([--with-bashcompdir=DIR], [directory for bash completions]), ,
+    [PKG_CHECK_VAR([with_bashcompdir], [bash-completion], [completionsdir], ,
+        [with_bashcompdir="${datarootdir}/bash-completion/completions"])])
+AC_MSG_CHECKING([for bashcompdir])
+AC_MSG_RESULT([${with_bashcompdir}])
+AC_SUBST([bashcompdir], [${with_bashcompdir}])
+
 AC_MSG_NOTICE([**************************************** thread model])
 # thread detection should be done first, as it may change the CC variable
 
 AC_ARG_WITH(threads,
 [  --with-threads=model    select threading model (ucontext/pthread/fork)],
 [
-    case "$withval" in
+    case "${withval}" in
         ucontext)
             AC_MSG_NOTICE([UCONTEXT mode selected])
             AC_DEFINE([USE_UCONTEXT], [1], [Define to 1 to select UCONTEXT mode])
@@ -50,9 +62,9 @@ AC_ARG_WITH(threads,
         pthread)
             AC_MSG_NOTICE([PTHREAD mode selected])
             AX_PTHREAD()
-            LIBS="$PTHREAD_LIBS $LIBS"
-            CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
-            CC="$PTHREAD_CC"
+            LIBS="${PTHREAD_LIBS} ${LIBS}"
+            CFLAGS="${CFLAGS} ${PTHREAD_CFLAGS}"
+            CC="${PTHREAD_CC}"
             AC_DEFINE([USE_PTHREAD], [1], [Define to 1 to select PTHREAD mode])
             ;;
         fork)
@@ -60,16 +72,16 @@ AC_ARG_WITH(threads,
             AC_DEFINE([USE_FORK], [1], [Define to 1 to select FORK mode])
             ;;
         *)
-            AC_MSG_ERROR([Unknown thread model \"${withval}\"])
+            AC_MSG_ERROR([Unknown thread model "${withval}"])
             ;;
     esac
 ], [
     # do not attempt to autodetect UCONTEXT threading
     AX_PTHREAD([
         AC_MSG_NOTICE([PTHREAD thread model detected])
-        LIBS="$PTHREAD_LIBS $LIBS"
-        CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
-        CC="$PTHREAD_CC"
+        LIBS="${PTHREAD_LIBS} ${LIBS}"
+        CFLAGS="${CFLAGS} ${PTHREAD_CFLAGS}"
+        CC="${PTHREAD_CC}"
         AC_DEFINE([USE_PTHREAD], [1], [Define to 1 to select PTHREAD mode])
     ], [
         AC_MSG_NOTICE([FORK thread model detected])
@@ -78,13 +90,12 @@ AC_ARG_WITH(threads,
 ])
 
 AC_MSG_NOTICE([**************************************** compiler/linker flags])
-if test "$GCC" = yes; then
+if test "${GCC}" = yes; then
     AX_APPEND_COMPILE_FLAGS([-Wall])
     AX_APPEND_COMPILE_FLAGS([-Wextra])
     AX_APPEND_COMPILE_FLAGS([-Wpedantic])
     AX_APPEND_COMPILE_FLAGS([-Wformat=2])
     AX_APPEND_COMPILE_FLAGS([-Wconversion])
-    AX_APPEND_COMPILE_FLAGS([-Wno-long-long])
     AX_APPEND_COMPILE_FLAGS([-Wno-deprecated-declarations])
     AX_APPEND_COMPILE_FLAGS([-fPIE])
     case "${host}" in
@@ -126,7 +137,7 @@ AC_CHECK_TYPES([struct sockaddr_un], [], [], [#include <sys/un.h>])
 AC_CHECK_TYPES([struct addrinfo], [], [], [#include <netdb.h>])
 
 AC_MSG_NOTICE([**************************************** PTY device files])
-if test "x$cross_compiling" = "xno"; then
+if test "x${cross_compiling}" = "xno"; then
     AC_CHECK_FILE("/dev/ptmx", AC_DEFINE([HAVE_DEV_PTMX], [1],
         [Define to 1 if you have '/dev/ptmx' device.]))
     AC_CHECK_FILE("/dev/ptc", AC_DEFINE([HAVE_DEV_PTS_AND_PTC], [1],
@@ -137,28 +148,28 @@ fi
 
 AC_MSG_NOTICE([**************************************** entropy sources])
 
-if test "x$cross_compiling" = "xno"; then
+if test "x${cross_compiling}" = "xno"; then
     AC_ARG_WITH(egd-socket,
         [  --with-egd-socket=FILE  Entropy Gathering Daemon socket path],
-        [EGD_SOCKET="$withval"]
+        [EGD_SOCKET="${withval}"]
     )
-    if test -n "$EGD_SOCKET"; then
-        AC_DEFINE_UNQUOTED([EGD_SOCKET], ["$EGD_SOCKET"],
+    if test -n "${EGD_SOCKET}"; then
+        AC_DEFINE_UNQUOTED([EGD_SOCKET], ["${EGD_SOCKET}"],
             [Entropy Gathering Daemon socket path])
     fi
 
     # Check for user-specified random device
     AC_ARG_WITH(random,
     [  --with-random=FILE      read randomness from file (default=/dev/urandom)],
-        [RANDOM_FILE="$withval"],
+        [RANDOM_FILE="${withval}"],
         [
             # Check for random device
             AC_CHECK_FILE("/dev/urandom", RANDOM_FILE="/dev/urandom")
         ]
     )
-    if test -n "$RANDOM_FILE"; then
+    if test -n "${RANDOM_FILE}"; then
         AC_SUBST([RANDOM_FILE])
-        AC_DEFINE_UNQUOTED([RANDOM_FILE], ["$RANDOM_FILE"], [Random file path])
+        AC_DEFINE_UNQUOTED([RANDOM_FILE], ["${RANDOM_FILE}"], [Random file path])
     fi
 else
     AC_MSG_WARN([cross-compilation: assuming entropy sources are not available])
@@ -166,13 +177,13 @@ fi
 
 AC_MSG_NOTICE([**************************************** default group])
 DEFAULT_GROUP=nobody
-if test "x$cross_compiling" = "xno"; then
+if test "x${cross_compiling}" = "xno"; then
     grep '^nogroup:' /etc/group >/dev/null && DEFAULT_GROUP=nogroup
 else
     AC_MSG_WARN([cross-compilation: assuming nogroup is not available])
 fi
 AC_MSG_CHECKING([for default group])
-AC_MSG_RESULT([$DEFAULT_GROUP])
+AC_MSG_RESULT([${DEFAULT_GROUP}])
 AC_SUBST([DEFAULT_GROUP])
 
 AC_SYS_LARGEFILE
@@ -212,8 +223,8 @@ AC_SEARCH_LIBS([dlopen], [dl])
 AC_SEARCH_LIBS([shl_load], [dld])
 
 # Add BeOS libraries
-if test "x$host_os" = "xbeos"; then
-    LIBS="$LIBS -lbe -lroot -lbind"
+if test "x${host_os}" = "xbeos"; then
+    LIBS="${LIBS} -lbe -lroot -lbind"
 fi
 
 AC_MSG_NOTICE([**************************************** library functions])
@@ -232,7 +243,7 @@ AC_CHECK_FUNCS(getcontext __makecontext_v2)
 # sockets
 AC_CHECK_FUNCS(poll gethostbyname2 endhostent getnameinfo)
 AC_MSG_CHECKING([for getaddrinfo])
-case "$host_os" in
+case "${host_os}" in
 *androideabi*)
     # http://stackoverflow.com/questions/7818246/segmentation-fault-in-getaddrinfo
     AC_MSG_RESULT([no (buggy Android implementation)])
@@ -257,7 +268,7 @@ getaddrinfo(NULL, NULL, NULL, NULL);
 esac
 # poll() is not recommended on Mac OS X <= 10.3 and broken on Mac OS X 10.4
 AC_MSG_CHECKING([for broken poll() implementation])
-case "$host_os" in
+case "${host_os}" in
 darwin[0-8].*)
     AC_MSG_RESULT([yes (poll() disabled)])
     AC_DEFINE([BROKEN_POLL], [1], [Define to 1 if you have a broken 'poll' implementation.])
@@ -275,7 +286,7 @@ AC_MSG_CHECKING([whether to enable IPv6 support])
 AC_ARG_ENABLE(ipv6,
 [  --disable-ipv6          disable IPv6 support],
     [
-        case "$enableval" in
+        case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
                  AC_DEFINE([USE_IPv6], [1],
                     [Define to 1 to enable IPv6 support])
@@ -283,7 +294,7 @@ AC_ARG_ENABLE(ipv6,
             no)  AC_MSG_RESULT([no])
                  ;;
             *)   AC_MSG_RESULT([error])
-                 AC_MSG_ERROR([bad value \"${enableval}\"])
+                 AC_MSG_ERROR([bad value "${enableval}"])
                  ;;
         esac
     ], [
@@ -340,7 +351,7 @@ AC_MSG_CHECKING([whether to enable FIPS support])
 AC_ARG_ENABLE(fips,
 [  --disable-fips          disable OpenSSL FIPS support],
     [
-        case "$enableval" in
+        case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
                  use_fips="yes"
                  AC_DEFINE([USE_FIPS], [1],
@@ -350,7 +361,7 @@ AC_ARG_ENABLE(fips,
                  use_fips="no"
                  ;;
             *)   AC_MSG_RESULT([error])
-                 AC_MSG_ERROR([bad value \"${enableval}\"])
+                 AC_MSG_ERROR([bad value "${enableval}"])
                  ;;
         esac
     ],
@@ -365,7 +376,7 @@ AC_MSG_CHECKING([whether to enable systemd socket activation support])
 AC_ARG_ENABLE(systemd,
 [  --disable-systemd       disable systemd socket activation support],
     [
-        case "$enableval" in
+        case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
                  AC_SEARCH_LIBS([sd_listen_fds], [systemd systemd-daemon])
                  AC_DEFINE([USE_SYSTEMD], [1],
@@ -374,7 +385,7 @@ AC_ARG_ENABLE(systemd,
             no)  AC_MSG_RESULT([no])
                  ;;
             *)   AC_MSG_RESULT([error])
-                 AC_MSG_ERROR([Bad value \"${enableval}\"])
+                 AC_MSG_ERROR([Bad value "${enableval}"])
                  ;;
         esac
     ],
@@ -400,24 +411,24 @@ AC_MSG_CHECKING([whether to enable TCP wrappers support])
 AC_ARG_ENABLE(libwrap,
 [  --disable-libwrap       disable TCP wrappers support],
     [
-        case "$enableval" in
+        case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
                  AC_DEFINE([USE_LIBWRAP], [1],
                      [Define to 1 to enable TCP wrappers support])
-                 LIBS="$LIBS -lwrap"
+                 LIBS="${LIBS} -lwrap"
                  ;;
             no)  AC_MSG_RESULT([no])
                  ;;
             *)   AC_MSG_RESULT([error])
-                 AC_MSG_ERROR([Bad value \"${enableval}\"])
+                 AC_MSG_ERROR([Bad value "${enableval}"])
                  ;;
         esac
     ],
     [
         AC_MSG_RESULT([autodetecting])
         AC_MSG_CHECKING([for hosts_access in -lwrap])
-        valid_LIBS="$LIBS"
-        LIBS="$valid_LIBS -lwrap"
+        valid_LIBS="${LIBS}"
+        LIBS="${valid_LIBS} -lwrap"
         AC_LINK_IFELSE(
             [
                 AC_LANG_PROGRAM(
@@ -430,7 +441,7 @@ AC_ARG_ENABLE(libwrap,
                 AC_MSG_NOTICE([libwrap support enabled])
             ], [
                 AC_MSG_RESULT([no])
-                LIBS="$valid_LIBS"
+                LIBS="${valid_LIBS}"
                 AC_MSG_NOTICE([libwrap library not found])
             ]
         )
@@ -452,7 +463,7 @@ iterate_ssl_dir() { :
     # - empty prefix
     for main_dir in "/usr/local" "/opt" "/opt/local" "/usr/local/opt" "/opt/csw" "/usr/pkg" "/usr/lib" "/usr" ""; do
         for sub_dir in "/ssl" "/openssl" "/ossl" ""; do
-            check_ssl_dir "$1$main_dir$sub_dir" && return 0
+            check_ssl_dir "$1${main_dir}${sub_dir}" && return 0
         done
     done
     return 1
@@ -460,21 +471,21 @@ iterate_ssl_dir() { :
 
 find_ssl_dir() { :
     # try Android *first*
-    case "$host_os" in
+    case "${host_os}" in
     *androideabi*)
-        iterate_ssl_dir "$ANDROID_NDK/sysroot" && return
+        iterate_ssl_dir "${ANDROID_NDK}/sysroot" && return
         ;;
     esac
 
-    test -d "$lt_sysroot" && iterate_ssl_dir "$lt_sysroot" && return
-    test "$prefix" != "NONE" && iterate_ssl_dir "$prefix" && return
-    test -d "$ac_default_prefix" && iterate_ssl_dir "$ac_default_prefix" && return
+    test -d "${lt_sysroot}" && iterate_ssl_dir "${lt_sysroot}" && return
+    test "${prefix}" != "NONE" && iterate_ssl_dir "${prefix}" && return
+    test -d "${ac_default_prefix}" && iterate_ssl_dir "${ac_default_prefix}" && return
     iterate_ssl_dir "" && return
 
     # try Xcode *last*
     if test -x "/usr/bin/xcrun"; then
         sdk_path=`/usr/bin/xcrun --sdk macosx --show-sdk-path`
-        check_ssl_dir "$sdk_path/usr" && return
+        check_ssl_dir "${sdk_path}/usr" && return
     fi
     check_ssl_dir "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-migrator/sdk/MacOSX.sdk/usr"
 }
@@ -483,26 +494,26 @@ SSLDIR=""
 AC_MSG_CHECKING([for TLS directory])
 AC_ARG_WITH(ssl,
 [  --with-ssl=DIR          location of installed TLS libraries/include files],
-    [check_ssl_dir "$withval"],
+    [check_ssl_dir "${withval}"],
     [find_ssl_dir]
 )
-if test -z "$SSLDIR"; then
+if test -z "${SSLDIR}"; then
 AC_MSG_RESULT([not found])
 AC_MSG_ERROR([
 Could not find your TLS library installation dir
 Use --with-ssl option to fix this problem
 ])
 fi
-AC_MSG_RESULT([$SSLDIR])
+AC_MSG_RESULT([${SSLDIR}])
 AC_SUBST([SSLDIR])
-AC_DEFINE_UNQUOTED([SSLDIR], ["$SSLDIR"], [TLS directory])
+AC_DEFINE_UNQUOTED([SSLDIR], ["${SSLDIR}"], [TLS directory])
 
-valid_CPPFLAGS="$CPPFLAGS"; CPPFLAGS="$CPPFLAGS -I$SSLDIR/include"
-valid_LIBS="$LIBS"; LIBS="$LIBS -L$SSLDIR/lib64 -L$SSLDIR/lib -lssl -lcrypto"
+valid_CPPFLAGS="${CPPFLAGS}"; CPPFLAGS="${CPPFLAGS} -I${SSLDIR}/include"
+valid_LIBS="${LIBS}"; LIBS="${LIBS} -L${SSLDIR}/lib64 -L${SSLDIR}/lib -lssl -lcrypto"
 
 AC_CHECK_FUNCS(FIPS_mode_set OSSL_PROVIDER_available)
-if test "x$use_fips" = "xauto"; then
-    if test "x$ac_cv_func_FIPS_mode_set" = "xyes" -o "x$ac_cv_func_OSSL_PROVIDER_available" = "xyes"; then
+if test "x${use_fips}" = "xauto"; then
+    if test "x${ac_cv_func_FIPS_mode_set}" = "xyes" -o "x${ac_cv_func_OSSL_PROVIDER_available}" = "xyes"; then
         AC_DEFINE([USE_FIPS], [1], [Define to 1 to enable OpenSSL FIPS support])
         AC_MSG_NOTICE([FIPS support enabled])
     else
@@ -512,27 +523,19 @@ fi
 
 AC_MSG_CHECKING([whether DH parameters need to be updated])
 # only build src/dhparam.c if sources are located in the current directory
-if test -f src/stunnel.c && ! grep -q " built for $PACKAGE_STRING " src/dhparam.c; then
+if test -f src/stunnel.c && ! grep -q " built for ${PACKAGE_STRING} " src/dhparam.c; then
     AC_MSG_RESULT([yes])
-    (
-        echo '/* dhparam.c: initial DH parameters for stunnel */'
-        echo '#include "prototypes.h"'
-        echo '#ifndef OPENSSL_NO_DH'
-        echo '#define DN_new DH_new'
-        openssl dhparam -noout -C 2048 | sed 's/static DH/DH/'
-        echo '#endif /* OPENSSL_NO_DH */'
-        echo "/* built for $PACKAGE_STRING */"
-    ) > src/dhparam.c
-    # also update trusted CA certificates
-    curl 'https://ccadb-public.secure.force.com/mozilla/IncludedRootsPEMTxt?TrustBitsInclude=Websites' |
-        sed -e 's/\r//' -e 's/ $//' >tools/ca-certs.pem
+    $(dirname $0)/makedh.sh "${PACKAGE_STRING}" >src/dhparam.c
 else
     AC_MSG_RESULT([no])
 fi
 
-SYSROOT="$lt_sysroot"
-CPPFLAGS="$valid_CPPFLAGS"
-LIBS="$valid_LIBS"
+AC_MSG_NOTICE([updating version.txt])
+echo "${PACKAGE_VERSION}" >version.txt
+
+SYSROOT="${lt_sysroot}"
+CPPFLAGS="${valid_CPPFLAGS}"
+LIBS="${valid_LIBS}"
 
 AC_MSG_NOTICE([**************************************** write the results])
 AC_CONFIG_FILES([Makefile src/Makefile doc/Makefile tools/Makefile tests/Makefile tests/certs/Makefile])

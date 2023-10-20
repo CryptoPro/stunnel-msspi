@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -38,8 +38,13 @@
 #include "prototypes.h"
 
     /* global OpenSSL initialization: compression, engine, entropy */
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
 NOEXPORT void cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
         int idx, long argl, void *argp);
+#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+NOEXPORT int cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+        int idx, long argl, void *argp);
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
 #if OPENSSL_VERSION_NUMBER>=0x30000000L
 NOEXPORT int cb_dup_addr(CRYPTO_EX_DATA *to, const CRYPTO_EX_DATA *from,
     void **from_d, int idx, long argl, void *argp);
@@ -54,7 +59,8 @@ NOEXPORT void cb_free_addr(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
     int idx, long argl, void *argp);
 #ifndef OPENSSL_NO_COMP
 NOEXPORT void compression_init(void);
-NOEXPORT int compression_configure(GLOBAL_OPTIONS *);
+NOEXPORT int compression_set(GLOBAL_OPTIONS *);
+NOEXPORT void compression_list(void);
 #endif
 NOEXPORT int prng_init(GLOBAL_OPTIONS *);
 NOEXPORT int add_rand_file(GLOBAL_OPTIONS *, const char *);
@@ -101,15 +107,54 @@ int fips_available() { /* either FIPS provider or container is available */
 }
 
 /* initialize libcrypto before invoking API functions that require it */
-void crypto_init(char *stunnel_dir) {
+void crypto_init() {
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
-    OPENSSL_INIT_SETTINGS *conf=OPENSSL_INIT_new();
+    OPENSSL_INIT_SETTINGS *conf;
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
 #ifdef USE_WIN32
-    char *path;
-#else /* USE_WIN32 */
-    (void)stunnel_dir; /* squash the unused parameter warning */
+    TCHAR stunnel_exe_path[MAX_PATH];
+    LPTSTR c;
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
+    char *stunnel_dir, *path;
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+
+    /* identify stunnel_exe_path */
+    GetModuleFileName(0, stunnel_exe_path, MAX_PATH);
+    c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* last backslash */
+    if(c) { /* found */
+        *c=TEXT('\0'); /* truncate the program name */
+        c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* previous backslash */
+        if(c && !_tcscmp(c+1, TEXT("bin")))
+            *c=TEXT('\0'); /* truncate "bin" */
+    }
+
+    /* set current working directory */
+#ifndef _WIN32_WCE
+    if(!SetCurrentDirectory(stunnel_exe_path)) {
+        LPTSTR errmsg=str_tprintf(TEXT("Cannot set directory to %s"),
+            stunnel_exe_path);
+        message_box(errmsg, MB_ICONERROR);
+        str_free(errmsg);
+        exit(1);
+    }
+    /* try to enter the "config" subdirectory, ignore the result */
+    SetCurrentDirectory(TEXT("config"));
+#endif
+
+    /* setup the environment */
+    _tputenv(str_tprintf(TEXT("OPENSSL_ENGINES=%s\\engines"),
+        stunnel_exe_path));
+    _tputenv(str_tprintf(TEXT("OPENSSL_MODULES=%s\\ossl-modules"),
+        stunnel_exe_path));
+    _tputenv(str_tprintf(TEXT("OPENSSL_CONF=%s\\config\\openssl.cnf"),
+        stunnel_exe_path));
 #endif /* USE_WIN32 */
+
+    /* initialize OpenSSL */
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
+    conf=OPENSSL_INIT_new();
 #ifdef USE_WIN32
+    stunnel_dir=tstr2str(stunnel_exe_path);
     if(!stunnel_dir) /* fail-safe */
         stunnel_dir=str_dup("..");
     path=str_printf("%s\\config\\openssl.cnf", stunnel_dir);
@@ -117,24 +162,30 @@ void crypto_init(char *stunnel_dir) {
         s_log(LOG_ERR, "Failed to set OpenSSL configuration file name");
     }
     str_free(path);
+#endif /* USE_WIN32 */
+    OPENSSL_init_crypto(
+        OPENSSL_INIT_LOAD_CRYPTO_STRINGS | OPENSSL_INIT_LOAD_CONFIG, conf);
+    OPENSSL_INIT_free(conf);
+#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+    OPENSSL_config(NULL);
+    SSL_load_error_strings();
+    SSL_library_init();
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+
+#ifdef USE_WIN32
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* setup the default search path for providers */
+    /* WARNING: OpenSSL needs to already be initialized */
     path=str_printf("%s\\ossl-modules", stunnel_dir);
     if(!OSSL_PROVIDER_set_default_search_path(NULL, path)) {
         s_log(LOG_ERR, "Failed to set default ossl-modules path");
     }
     str_free(path);
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
     str_free(stunnel_dir);
-#endif /* USE_WIN32 */
-    OPENSSL_init_crypto(
-        OPENSSL_INIT_LOAD_CRYPTO_STRINGS | OPENSSL_INIT_LOAD_CONFIG, conf);
-    OPENSSL_INIT_free(conf);
-#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-    (void)stunnel_dir; /* squash the unused parameter warning */
-    OPENSSL_config(NULL);
-    SSL_load_error_strings();
-    SSL_library_init();
 #endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+#endif /* USE_WIN32 */
 }
 
 /* initialize lbssl before parsing the configuration file */
@@ -186,8 +237,13 @@ int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g) {
 #endif
 #endif
 
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
 NOEXPORT void cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
         int idx, long argl, void *argp) {
+#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+NOEXPORT int cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+        int idx, long argl, void *argp) {
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
     (void)parent; /* squash the unused parameter warning */
     (void)ptr; /* squash the unused parameter warning */
     (void)argl; /* squash the unused parameter warning */
@@ -195,6 +251,9 @@ NOEXPORT void cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
         (char *)argp);
     if(!CRYPTO_set_ex_data(ad, idx, (void *)(-1)))
         sslerror("CRYPTO_set_ex_data");
+#if OPENSSL_VERSION_NUMBER<0x10100000L
+    return 1; /* success */
+#endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
 }
 
 #if OPENSSL_VERSION_NUMBER>=0x30000000L
@@ -280,8 +339,9 @@ int ssl_configure(GLOBAL_OPTIONS *global) { /* configure global TLS settings */
 #endif /* USE_FIPS */
 
 #ifndef OPENSSL_NO_COMP
-    if(compression_configure(global))
+    if(compression_set(global))
         return 1;
+    compression_list();
 #endif /* OPENSSL_NO_COMP */
     if(prng_init(global))
         return 1;
@@ -358,32 +418,41 @@ NOEXPORT void compression_init() {
     comp_methods[COMP_ZLIB]=methods; /* reuse the memory */
 }
 
-NOEXPORT int compression_configure(GLOBAL_OPTIONS *global) {
-    STACK_OF(SSL_COMP) *methods;
-    int num_methods, i;
-
+NOEXPORT int compression_set(GLOBAL_OPTIONS *global) {
     if(!comp_methods[global->compression]) {
         s_log(LOG_ERR, "Configured compression is unsupported by OpenSSL");
         return 1;
     }
     SSL_COMP_set0_compression_methods(comp_methods[global->compression]);
+    return 0; /* success */
+}
+
+NOEXPORT void compression_list() {
+    STACK_OF(SSL_COMP) *methods;
+    int num_methods, i;
 
     methods=SSL_COMP_get_compression_methods();
     num_methods=sk_SSL_COMP_num(methods);
+    if(!num_methods) {
+        s_log(LOG_INFO, "Compression disabled");
+        return;
+    }
     s_log(LOG_INFO, "Compression enabled: %d method%s",
         num_methods, num_methods==1 ? "" : "s");
     for(i=0; i<num_methods; ++i) {
-        SSL_COMP *comp=sk_SSL_COMP_value(methods, i);
-        if(comp) {
-            const char *name=SSL_COMP_get0_name(comp);
-            /* see OpenSSL commit 847406923534dd791f73d0cda15d3f17f513f2a5 */
-            if(!name)
-                name="unknown";
-            s_log(LOG_INFO, "Compression id 0x%02x: %s",
-                SSL_COMP_get_id(comp), name);
-        }
+        SSL_COMP *comp;
+        const char *name;
+
+        comp=sk_SSL_COMP_value(methods, i);
+        if(!comp)
+            continue;
+        name=SSL_COMP_get0_name(comp);
+        /* see OpenSSL commit 847406923534dd791f73d0cda15d3f17f513f2a5 */
+        if(!name)
+            name="unknown";
+        s_log(LOG_INFO, "Compression id 0x%02x: %s",
+            SSL_COMP_get_id(comp), name);
     }
-    return 0; /* success */
 }
 #endif /* OPENSSL_NO_COMP */
 

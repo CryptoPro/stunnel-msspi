@@ -1,5 +1,5 @@
 ## Process this file with automake to produce Makefile.in
-# by Michal Trojnara 1998-2022
+# by Michal Trojnara 1998-2023
 
 ###############################################################################
 # File lists                                                                  #
@@ -40,12 +40,14 @@ stunnel_CPPFLAGS += -DCONFDIR='"$(sysconfdir)/stunnel"'
 # TLS library
 stunnel_LDFLAGS = -L$(SSLDIR)/lib64 -L$(SSLDIR)/lib
 
-# stunnel3 script
+# Apply substitutions
 edit = sed \
-	-e 's|@bindir[@]|$(bindir)|g'
-stunnel3: Makefile
+	-e 's|@bindir[@]|$(bindir)|g' \
+	-e 's|@PACKAGE_VERSION[@]|$(PACKAGE_VERSION)|g'
+stunnel3 os2.mak: Makefile
 	$(edit) '$(srcdir)/$@.in' >$@
 stunnel3: $(srcdir)/stunnel3.in
+os2.mak: $(srcdir)/os2.mak.in
 
 # Unix shared library
 pkglib_LTLIBRARIES = libstunnel.la
@@ -71,7 +73,14 @@ mingw64:
 clean-local:
 	rm -rf ../obj ../bin
 
-# Remaining files to be included
+###############################################################################
+# Remaining files to be included                                              #
+###############################################################################
+
+dist_noinst_DATA = os2.mak
+EXTRA_DIST += os2.mak.in
+CLEANFILES += os2.mak
+
 EXTRA_DIST += $(win32_gui_sources) $(win32_cli_sources)
 EXTRA_DIST += make.bat makece.bat makew32.bat
-EXTRA_DIST += mingw.mk mingw.mak evc.mak vc.mak os2.mak
+EXTRA_DIST += mingw.mk mingw.mak evc.mak vc.mak

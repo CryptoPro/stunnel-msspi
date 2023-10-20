@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -140,6 +140,8 @@ typedef long SSL_OPTIONS_TYPE;
 #endif
 
 int context_init(SERVICE_OPTIONS *section) { /* init TLS context */
+    s_log(LOG_DEBUG, "Initializing context [%s]", section->servname);
+
     /* create a new TLS context */
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
 #if OPENSSL_VERSION_NUMBER>=0x30000000L
@@ -152,13 +154,15 @@ int context_init(SERVICE_OPTIONS *section) { /* init TLS context */
     section->ctx=SSL_CTX_new(section->option.client ?
         TLS_client_method() : TLS_server_method());
 #endif /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-    if(!SSL_CTX_set_min_proto_version(section->ctx,
+    if(section->min_proto_version &&
+            !SSL_CTX_set_min_proto_version(section->ctx,
             section->min_proto_version)) {
         s_log(LOG_ERR, "Failed to set the minimum protocol version 0x%X",
             section->min_proto_version);
         return 1; /* FAILED */
     }
-    if(!SSL_CTX_set_max_proto_version(section->ctx,
+    if(section->max_proto_version &&
+            !SSL_CTX_set_max_proto_version(section->ctx,
             section->max_proto_version)) {
         s_log(LOG_ERR, "Failed to set the maximum protocol version 0x%X",
             section->max_proto_version);
@@ -323,6 +327,12 @@ int context_init(SERVICE_OPTIONS *section) { /* init TLS context */
     if(verify_init(section))
         return 1; /* FAILED */
 
+    /* OCSP stapling */
+#ifndef OPENSSL_NO_OCSP
+    if(ocsp_init(section))
+        return 1; /* FAILED */
+#endif /* OPENSSL_NO_OCSP */
+
     /* initialize the DH/ECDH key agreement */
 #ifndef OPENSSL_NO_TLSEXT
     if(!section->option.client)
@@ -337,6 +347,25 @@ int context_init(SERVICE_OPTIONS *section) { /* init TLS context */
 #endif /* OPENSSL_NO_ECDH */
 
     return 0; /* OK */
+}
+
+/**************************************** cleanup TLS context */
+
+/*
+ * free anything allocate from context_init() and callbacks
+ * also free any cached data allocated in client.c
+ */
+void context_cleanup(SERVICE_OPTIONS *section) {
+    s_log(LOG_DEBUG, "Cleaning up context [%s]", section->servname);
+
+#ifndef OPENSSL_NO_OCSP
+    ocsp_cleanup(section);
+#endif /* !defined(OPENSSL_NO_OCSP) */
+    str_free(section->chain);
+    if(section->session)
+        SSL_SESSION_free(section->session);
+    if(section->ctx)
+        SSL_CTX_free(section->ctx);
 }
 
 /**************************************** SNI callback */
@@ -715,7 +744,13 @@ NOEXPORT unsigned psk_server_callback(SSL *ssl, const char *identity,
     c=SSL_get_ex_data(ssl, index_ssl_cli);
     found=psk_find(&c->opt->psk_sorted, identity);
     if(!found) {
-        s_log(LOG_INFO, "PSK identity not found (session resumption?)");
+        const char *c=identity;
+        while(*c && isprint(*c))
+            c++;
+        if(*c)
+            s_log(LOG_INFO, "PSK identity not found (session resumption?)");
+        else
+            s_log(LOG_INFO, "PSK identity not found: %s", identity);
         return 0;
     }
     if(found->key_len>max_psk_len) {
@@ -843,6 +878,21 @@ NOEXPORT int load_pkcs12_file(SERVICE_OPTIONS *section) {
         sslerror("SSL_CTX_use_PrivateKey");
         return 1; /* FAILED */
     }
+#if OPENSSL_VERSION_NUMBER>=0x10002000L
+    if(!SSL_CTX_set0_chain(section->ctx, ca)) {
+        sslerror("SSL_CTX_set0_chain");
+        return 1; /* FAILED */
+    }
+#else /* OPENSSL_VERSION_NUMBER>=0x10002000L */
+    /* FIXME: implement for OpenSSL older than 1.0.2 */
+#if 0
+    /* struct cert_st is private, so the following code won't build */
+    if(section->ctx->cert->key->chain)
+        sk_X509_pop_free(section->ctx->cert->key->chain, X509_free);
+    section->ctx->cert->key->chain=ca;
+#endif
+    sk_X509_pop_free(ca, X509_free); /* just free the memory */
+#endif /* OPENSSL_VERSION_NUMBER>=0x10002000L */
     s_log(LOG_INFO, "Certificate and private key loaded from file: %s",
         section->cert);
     return 0; /* OK */
@@ -897,24 +947,19 @@ NOEXPORT int load_key_file(SERVICE_OPTIONS *section) {
 #ifndef OPENSSL_NO_ENGINE
 
 NOEXPORT int load_cert_engine(SERVICE_OPTIONS *section) {
-    struct {
-        const char *id;
-        X509 *cert;
-    } parms;
+    X509 *cert;
 
     s_log(LOG_INFO, "Loading certificate from engine ID: %s", section->cert);
-    parms.id=section->cert;
-    parms.cert=NULL;
-    ENGINE_ctrl_cmd(section->engine, "LOAD_CERT_CTRL", 0, &parms, NULL, 1);
-    if(!parms.cert) {
-        sslerror("ENGINE_ctrl_cmd");
+    cert=engine_get_cert(section->engine, section->cert);
+    if(!cert)
         return 1; /* FAILED */
-    }
-    if(!SSL_CTX_use_certificate(section->ctx, parms.cert)) {
+    if(!SSL_CTX_use_certificate(section->ctx, cert)) {
         sslerror("SSL_CTX_use_certificate");
+        X509_free(cert);
         return 1; /* FAILED */
     }
     s_log(LOG_INFO, "Certificate loaded from engine ID: %s", section->cert);
+    X509_free(cert);
     return 0; /* OK */
 }
 
@@ -1005,30 +1050,41 @@ NOEXPORT int ui_retry() {
     unsigned long err=ERR_peek_error();
 
     switch(ERR_GET_LIB(err)) {
-    case ERR_LIB_ASN1:
-        return 1;
-    case ERR_LIB_PKCS12:
-        switch(ERR_GET_REASON(err)) {
-        case PKCS12_R_MAC_VERIFY_FAILURE:
-            return 1;
-        default:
-            return 0;
-        }
-    case ERR_LIB_EVP:
+    case ERR_LIB_EVP: /* 6 */
         switch(ERR_GET_REASON(err)) {
         case EVP_R_BAD_DECRYPT:
             return 1;
         default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_EVP error reason: %d",
+                ERR_GET_REASON(err));
             return 0;
         }
-    case ERR_LIB_PEM:
+    case ERR_LIB_PEM: /* 9 */
         switch(ERR_GET_REASON(err)) {
         case PEM_R_BAD_PASSWORD_READ:
+        case PEM_R_BAD_DECRYPT:
             return 1;
         default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_PEM error reason: %d",
+                ERR_GET_REASON(err));
             return 0;
         }
-    case ERR_LIB_UI:
+    case ERR_LIB_ASN1: /* 13 */
+        return 1;
+    case ERR_LIB_PKCS12: /* 35 */
+        switch(ERR_GET_REASON(err)) {
+        case PKCS12_R_MAC_VERIFY_FAILURE:
+            return 1;
+        default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_PKCS12 error reason: %d",
+                ERR_GET_REASON(err));
+            return 0;
+        }
+#ifdef ERR_LIB_DSO /* 37 */
+    case ERR_LIB_DSO:
+        return 1;
+#endif
+    case ERR_LIB_UI: /* 40 */
         switch(ERR_GET_REASON(err)) {
         case UI_R_RESULT_TOO_LARGE:
         case UI_R_RESULT_TOO_SMALL:
@@ -1037,17 +1093,44 @@ NOEXPORT int ui_retry() {
 #endif
             return 1;
         default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_UI error reason: %d",
+                ERR_GET_REASON(err));
             return 0;
         }
-    case ERR_LIB_USER: /* PKCS#11 hacks */
+#ifdef ERR_LIB_OSSL_STORE
+    case ERR_LIB_OSSL_STORE: /* 44 - added in OpenSSL 1.1.1 */
+        switch(ERR_GET_REASON(err)) {
+        case OSSL_STORE_R_BAD_PASSWORD_READ:
+            return 1;
+        default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_OSSL_STORE error reason: %d",
+                ERR_GET_REASON(err));
+            return 0;
+        }
+#endif
+#ifdef ERR_LIB_PROV
+    case ERR_LIB_PROV: /* 57 - added in OpenSSL 3.0 */
+        switch(ERR_GET_REASON(err)) {
+        case PROV_R_BAD_DECRYPT:
+            return 1;
+        default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_PROV error reason: %d",
+                ERR_GET_REASON(err));
+            return 0;
+        }
+#endif
+    case ERR_LIB_USER: /* 128 - PKCS#11 hacks */
         switch(ERR_GET_REASON(err)) {
         case 7UL: /* CKR_ARGUMENTS_BAD */
         case 0xa0UL: /* CKR_PIN_INCORRECT */
             return 1;
         default:
+            s_log(LOG_ERR, "Unhandled ERR_LIB_USER error reason: %d",
+                ERR_GET_REASON(err));
             return 0;
         }
     default:
+        s_log(LOG_ERR, "Unhandled error library: %d", ERR_GET_LIB(err));
         return 0;
     }
 }
@@ -1328,7 +1411,7 @@ NOEXPORT void session_cache_save(CLI *c, SSL_SESSION *sess) {
             old=c->opt->connect_session[c->idx];
             c->opt->connect_session[c->idx]=sess;
         } else {
-            s_log(LOG_ERR, "INTERNAL ERROR: Uninitialized client session cache");
+            s_log(LOG_ERR, "INTERNAL ERROR: Uninitialized client session cache (save)");
             old=NULL;
         }
     }
@@ -1542,57 +1625,65 @@ NOEXPORT void info_callback(const SSL *ssl, int where, int ret) {
     CLI *c;
     SSL_CTX *ctx;
     const char *state_string;
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
+    OSSL_HANDSHAKE_STATE state=SSL_get_state(ssl);
+#else
+    int state=SSL_get_state((SSL *)ssl);
+#endif
 
     c=SSL_get_ex_data(ssl, index_ssl_cli);
-    if(c) {
-#if OPENSSL_VERSION_NUMBER>=0x10100000L
-        OSSL_HANDSHAKE_STATE state=SSL_get_state(ssl);
-#else
-        int state=SSL_get_state((SSL *)ssl);
+    if(!c) {
+        s_log(LOG_ERR,
+            "INTERNAL ERROR: info_callback() called without CLI, state = %x",
+            state);
+        return;
+    }
+#if 0
+    s_log(LOG_DEBUG, "state = %x", state);
 #endif
 
-#if 0
-        s_log(LOG_DEBUG, "state = %x", state);
-#endif
+        /* do not reset the TLS socket after a fatal alert */
+    if(where & SSL_CB_ALERT && !strcmp(SSL_alert_type_string(ret), "F"))
+        c->fatal_alert=1;
 
         /* log the client certificate request (if received) */
 #ifndef SSL3_ST_CR_CERT_REQ_A
-        if(state==TLS_ST_CR_CERT_REQ)
+    if(state==TLS_ST_CR_CERT_REQ)
 #else
-        if(state==SSL3_ST_CR_CERT_REQ_A)
+    if(state==SSL3_ST_CR_CERT_REQ_A)
 #endif
-            print_client_CA_list(SSL_get_client_CA_list(ssl));
+        print_CA_list("Received trusted client CA",
+            SSL_get_client_CA_list(ssl));
 #ifndef SSL3_ST_CR_SRVR_DONE_A
-        if(state==TLS_ST_CR_SRVR_DONE)
+    if(state==TLS_ST_CR_SRVR_DONE)
 #else
-        if(state==SSL3_ST_CR_SRVR_DONE_A)
+    if(state==SSL3_ST_CR_SRVR_DONE_A)
 #endif
-            if(!SSL_get_client_CA_list(ssl))
-                s_log(LOG_INFO, "Client certificate not requested");
+        if(!SSL_get_client_CA_list(ssl))
+            s_log(LOG_INFO, "Client certificate not requested");
 
-        /* prevent renegotiation DoS attack */
-        if((where&SSL_CB_HANDSHAKE_DONE)
-                && c->reneg_state==RENEG_INIT) {
-            /* first (initial) handshake was completed, remember this,
-             * so that further renegotiation attempts can be detected */
-            c->reneg_state=RENEG_ESTABLISHED;
-        } else if((where&SSL_CB_ACCEPT_LOOP)
-                && c->reneg_state==RENEG_ESTABLISHED) {
+    /* prevent renegotiation DoS attack */
+    if((where&SSL_CB_HANDSHAKE_DONE)
+            && c->reneg_state==RENEG_INIT) {
+        /* first (initial) handshake was completed, remember this,
+         * so that further renegotiation attempts can be detected */
+        c->reneg_state=RENEG_ESTABLISHED;
+    } else if((where&SSL_CB_ACCEPT_LOOP)
+            && c->reneg_state==RENEG_ESTABLISHED) {
 #ifndef SSL3_ST_SR_CLNT_HELLO_A
-            if(state==TLS_ST_SR_CLNT_HELLO) {
+        if(state==TLS_ST_SR_CLNT_HELLO) {
 #else
-            if(state==SSL3_ST_SR_CLNT_HELLO_A
-                    || state==SSL23_ST_SR_CLNT_HELLO_A) {
+        if(state==SSL3_ST_SR_CLNT_HELLO_A
+                || state==SSL23_ST_SR_CLNT_HELLO_A) {
 #endif
-                /* client hello received after initial handshake,
-                 * this means renegotiation -> mark it */
-                c->reneg_state=RENEG_DETECTED;
-            }
+            /* client hello received after initial handshake,
+             * this means renegotiation -> mark it */
+            c->reneg_state=RENEG_DETECTED;
         }
-
-        if(c->opt->log_level<LOG_DEBUG) /* performance optimization */
-            return;
     }
+
+    if(c->opt->log_level<LOG_DEBUG)
+        return; /* performance optimization: skip logging debug info */
 
     if(where & SSL_CB_LOOP) {
         state_string=SSL_state_string_long(ssl);

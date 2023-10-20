@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -597,7 +597,7 @@ int get_socket_error(const SOCKET fd) {
 
 /**************************************** simulate blocking I/O */
 
-int s_connect(CLI *c, SOCKADDR_UNION *addr, socklen_t addrlen) {
+int s_connect(CLI *c, SOCKADDR_UNION *addr, socklen_t addrlen, int timeout) {
     int error;
     char *dst;
 
@@ -618,11 +618,11 @@ int s_connect(CLI *c, SOCKADDR_UNION *addr, socklen_t addrlen) {
     }
 
     s_log(LOG_DEBUG, "s_connect: s_poll_wait %s: waiting %d seconds",
-        dst, c->opt->timeout_connect);
+        dst, timeout);
     s_poll_init(c->fds, 0);
     s_poll_add(c->fds, c->fd, 1, 1);
     s_poll_dump(c->fds, LOG_DEBUG);
-    switch(s_poll_wait(c->fds, c->opt->timeout_connect, 0)) {
+    switch(s_poll_wait(c->fds, timeout, 0)) {
     case -1:
         error=get_last_socket_error();
         s_log(LOG_ERR, "s_connect: s_poll_wait %s: %s (%d)",
@@ -657,9 +657,10 @@ int s_connect(CLI *c, SOCKADDR_UNION *addr, socklen_t addrlen) {
 void s_write(CLI *c, SOCKET fd, const void *buf, size_t len) {
         /* simulate a blocking write */
     const uint8_t *ptr=(const uint8_t *)buf;
-    ssize_t num;
 
     while(len>0) {
+        ssize_t num;
+
         s_poll_init(c->fds, 0);
         s_poll_add(c->fds, fd, 0, 1); /* write */
         switch(s_poll_wait(c->fds, c->opt->timeout_busy, 0)) {
@@ -676,13 +677,15 @@ void s_write(CLI *c, SOCKET fd, const void *buf, size_t len) {
             s_log(LOG_ERR, "s_write: s_poll_wait: unknown result");
             throw_exception(c, 1); /* error */
         }
+
         num=writesocket(fd, (const void *)ptr, len);
-        if(num==-1) { /* error */
-            sockerror("writesocket (s_write)");
-            throw_exception(c, 1);
+        if(num>=0) {
+            ptr+=(size_t)num;
+            len-=(size_t)num;
+        } else { /* error */
+            if(!socket_needs_retry(c, "s_write: writesocket"))
+                throw_exception(c, 1);
         }
-        ptr+=(size_t)num;
-        len-=(size_t)num;
     }
 }
 
@@ -712,16 +715,16 @@ size_t s_read_eof(CLI *c, SOCKET fd, void *ptr, size_t len) {
         }
 
         num=readsocket(fd, (char *)ptr+total, len);
-        if(num<0) { /* error */
-            sockerror("readsocket (s_read_eof)");
-            throw_exception(c, 1);
+        if(num>0) {
+            total+=(size_t)num;
+            len-=(size_t)num;
+        } else if(num==0) { /* EOF */
+            s_log(LOG_DEBUG, "s_read_eof: EOF");
+            break; /* EOF */
+        } else { /* error */
+            if(!socket_needs_retry(c, "s_read_eof: readsocket"))
+                break; /* EOF */
         }
-        if(num==0) { /* EOF */
-            s_log(LOG_DEBUG, "Socket closed (s_read_eof)");
-            break;
-        }
-        total+=(size_t)num;
-        len-=(size_t)num;
     }
     return total;
 }
@@ -729,8 +732,10 @@ size_t s_read_eof(CLI *c, SOCKET fd, void *ptr, size_t len) {
 void s_read(CLI *c, SOCKET fd, void *ptr, size_t len) {
         /* simulate a blocking read */
         /* throw an exception on EOF */
-    if(s_read_eof(c, fd, ptr, len)!=len) {
-        s_log(LOG_ERR, "Unexpected socket close (s_read)");
+    size_t received=s_read_eof(c, fd, ptr, len);
+    if(received!=len) {
+        s_log(LOG_ERR, "s_read: Received %llu out of requested %llu byte(s)",
+            (unsigned long long)received, (unsigned long long)len);
         throw_exception(c, 1);
     }
 }
@@ -794,32 +799,47 @@ void fd_printf(CLI *c, SOCKET fd, const char *format, ...) {
 void s_ssl_write(CLI *c, const void *buf, int len) {
         /* simulate a blocking SSL_write */
     const uint8_t *ptr=(const uint8_t *)buf;
-    int num;
 
     while(len>0) {
+        int num, err;
+
         s_poll_init(c->fds, 0);
         s_poll_add(c->fds, c->ssl_wfd->fd, 0, 1); /* write */
         switch(s_poll_wait(c->fds, c->opt->timeout_busy, 0)) {
         case -1:
-            sockerror("s_write: s_poll_wait");
+            sockerror("s_ssl_write: s_poll_wait");
             throw_exception(c, 1); /* error */
         case 0:
-            s_log(LOG_INFO, "s_write: s_poll_wait:"
+            s_log(LOG_INFO, "s_ssl_write: s_poll_wait:"
                 " TIMEOUTbusy exceeded: sending reset");
             throw_exception(c, 1); /* timeout */
         case 1:
             break; /* OK */
         default:
-            s_log(LOG_ERR, "s_write: s_poll_wait: unknown result");
+            s_log(LOG_ERR, "s_ssl_write: s_poll_wait: unknown result");
             throw_exception(c, 1); /* error */
         }
+
         num=SSL_write(c->ssl, (const void *)ptr, len);
-        if(num==-1) { /* error */
-            sockerror("SSL_write (s_ssl_write)");
+        err=SSL_get_error(c->ssl, num);
+        if(err==SSL_ERROR_NONE) {
+            ptr+=num;
+            len-=num;
+        } else if(err==SSL_ERROR_WANT_WRITE) {
+            s_log(LOG_DEBUG, "s_ssl_write: SSL_ERROR_WANT_WRITE: Retrying");
+        } else if(err==SSL_ERROR_SSL) {
+            sslerror("s_ssl_write: SSL_write");
+            throw_exception(c, 1);
+        } else if(err==SSL_ERROR_SYSCALL) {
+            if(!socket_needs_retry(c, "s_ssl_write: SSL_write")) {
+                SSL_set_shutdown(c->ssl,
+                    SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
+                break; /* EOF */
+            }
+        } else {
+            s_log(LOG_ERR, "s_ssl_write: Unhandled error %d", err);
             throw_exception(c, 1);
         }
-        ptr+=num;
-        len-=num;
     }
 }
 
@@ -829,38 +849,62 @@ size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
     size_t total=0;
 
     while(len>0) {
-        int num;
+        int num, err;
 
         if(!SSL_pending(c->ssl)) {
             s_poll_init(c->fds, 0);
             s_poll_add(c->fds, c->ssl_rfd->fd, 1, 0); /* read */
             switch(s_poll_wait(c->fds, c->opt->timeout_busy, 0)) {
             case -1:
-                sockerror("s_read: s_poll_wait");
+                sockerror("s_ssl_read_eof: s_poll_wait");
                 throw_exception(c, 1); /* error */
             case 0:
-                s_log(LOG_INFO, "s_read: s_poll_wait:"
+                s_log(LOG_INFO, "s_ssl_read_eof: s_poll_wait:"
                     " TIMEOUTbusy exceeded: sending reset");
                 throw_exception(c, 1); /* timeout */
             case 1:
                 break; /* OK */
             default:
-                s_log(LOG_ERR, "s_read: s_poll_wait: unknown result");
+                s_log(LOG_ERR, "s_ssl_read_eof: s_poll_wait: unknown result");
                 throw_exception(c, 1); /* error */
             }
         }
 
         num=SSL_read(c->ssl, (char *)ptr+total, len);
-        if(num<0) { /* error */
-            sockerror("SSL_read (s_ssl_read_eof)");
+        err=SSL_get_error(c->ssl, num);
+        if(err==SSL_ERROR_NONE) {
+            total+=(size_t)num;
+            len-=num;
+        } else if(err==SSL_ERROR_ZERO_RETURN) {
+            s_log(LOG_DEBUG, "s_ssl_read_eof: close_notify");
+            break; /* EOF */
+        } else if(err==SSL_ERROR_WANT_READ) {
+            s_log(LOG_DEBUG, "s_ssl_read_eof: SSL_ERROR_WANT_READ: Retrying");
+        } else if(err==SSL_ERROR_SSL) {
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+            /* OpenSSL 3.0 changed the method of reporting socket EOF */
+            if(ERR_GET_REASON(ERR_peek_error())==
+                    SSL_R_UNEXPECTED_EOF_WHILE_READING) {
+                /* EOF -> buggy (e.g. Microsoft) peer:
+                 * TLS socket closed without close_notify alert */
+                s_log(LOG_DEBUG, "s_ssl_read_eof: TLS socket closed");
+                SSL_set_shutdown(c->ssl,
+                    SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
+                break; /* EOF */
+            }
+#endif /* SSL_R_UNEXPECTED_EOF_WHILE_READING */
+            sslerror("s_ssl_read_eof: SSL_read");
+            throw_exception(c, 1);
+        } else if(err==SSL_ERROR_SYSCALL) {
+            if(!socket_needs_retry(c, "s_ssl_read_eof: SSL_read")) {
+                SSL_set_shutdown(c->ssl,
+                    SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
+                break; /* EOF */
+            }
+        } else {
+            s_log(LOG_ERR, "s_ssl_read_oef: Unhandled error %d", err);
             throw_exception(c, 1);
         }
-        if(num==0) { /* EOF */
-            s_log(LOG_DEBUG, "Socket close (s_ssl_read_eof)");
-            break;
-        }
-        total+=(size_t)num;
-        len-=num;
     }
     return total;
 }
@@ -868,8 +912,10 @@ size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
 void s_ssl_read(CLI *c, void *ptr, int len) {
         /* simulate a blocking SSL_read */
         /* throw an exception on EOF */
-    if(s_ssl_read_eof(c, ptr, len)!=(size_t)len) {
-        s_log(LOG_ERR, "Unexpected socket close (s_ssl_read)");
+    size_t received=s_ssl_read_eof(c, ptr, len);
+    if(received!=(size_t)len) {
+        s_log(LOG_ERR, "s_ssl_read: Received %llu out of requested %d byte(s)",
+            (unsigned long long)received, len);
         throw_exception(c, 1);
     }
 }
@@ -1043,6 +1089,48 @@ int original_dst(const SOCKET fd, SOCKADDR_UNION *addr) {
     sockerror("getsockname");
 #endif /* SO_ORIGINAL_DST */
     return -1; /* failed */
+}
+
+    /* returns 0 on close and 1 on non-critical errors */
+int socket_needs_retry(CLI *c, const char *text) {
+    switch(get_last_socket_error()) {
+        /* http://tangentsoft.net/wskfaq/articles/bsd-compatibility.html */
+    case 0: /* close on read, or close on write on WIN32 */
+        /* fall through */
+#ifndef USE_WIN32
+    case EPIPE: /* close on write on Unix */
+        /* fall through */
+#endif
+    case S_ECONNABORTED:
+        s_log(LOG_INFO, "%s: Socket is closed", text);
+        return 0;
+    case S_EINTR:
+        s_log(LOG_DEBUG, "%s: Interrupted by a signal: retrying", text);
+        return 1;
+    case S_EWOULDBLOCK:
+        s_log(LOG_NOTICE, "%s: Would block: retrying", text);
+        s_poll_sleep(1, 0); /* Microsoft bug KB177346 */
+        return 1;
+#if S_EAGAIN!=S_EWOULDBLOCK
+    case S_EAGAIN:
+        s_log(LOG_DEBUG,
+            "%s: Temporary lack of resources: retrying", text);
+        return 1;
+#endif
+#ifdef USE_WIN32
+    case S_ECONNRESET:
+        /* dying "exec" processes on Win32 cause reset instead of close */
+        if(c->opt->exec_name) {
+            s_log(LOG_INFO, "%s: Socket is closed (exec)", text);
+            return 0;
+        }
+#endif
+        /* fall through */
+    default:
+        sockerror(text);
+        throw_exception(c, 1);
+        return -1; /* some C compilers require a return value */
+    }
 }
 
 /* end of network.c */

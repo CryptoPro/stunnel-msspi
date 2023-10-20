@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -265,7 +265,7 @@ NOEXPORT void s_lock_destroy_debug(struct CRYPTO_dynlock_value *lock,
 
 #endif /* USE_WIN32 */
 
-NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK *lock) {
+NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK_stunnel *lock) {
     int ret;
 
     (void)lock; /* squash the unused parameter warning */
@@ -287,7 +287,7 @@ NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK *lock) {
 
 #endif /* NO_OPENSSL_LOCKS */
 
-CRYPTO_RWLOCK *stunnel_locks[STUNNEL_LOCKS];
+CRYPTO_RWLOCK_stunnel *stunnel_locks[STUNNEL_LOCKS];
 
 #if NO_OPENSSL_LOCKS
 
@@ -389,7 +389,7 @@ void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock) {
 #endif /* USE_OS_THREADS */
 
 int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock) {
-    *ret=s_atomic_add(val, amount, lock);
+    *ret=s_atomic_add(val, amount, (CRYPTO_RWLOCK_stunnel *)lock);
     return 1;
 }
 

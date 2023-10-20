@@ -1,4 +1,4 @@
-# NSIS stunnel installer by Michal Trojnara 1998-2022
+# NSIS stunnel installer by Michal Trojnara 1998-2023
 
 !define /ifndef VERSION testing
 !define /ifndef ARCH win32
@@ -30,6 +30,9 @@ BrandingText "Author: Michal Trojnara"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\bin\stunnel.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Start stunnel after installation"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
+!define MUI_FINISHPAGE_NOAUTOCLOSE
+!define MUI_UNFINISHPAGE_NOAUTOCLOSE
+
 !include "MUI2.nsh"
 # define SF_SELECTED
 !include "Sections.nsh"
@@ -54,11 +57,12 @@ BrandingText "Author: Michal Trojnara"
 !define /ifndef ZLIB_DIR ${BIN_DIR}\zlib
 !define /ifndef REDIST_DIR ${BIN_DIR}\redist
 
+!if ${SUFFIX} == "3"
+!include "${STUNNEL_TOOLS_DIR}/ReplaceInFile3.nsh"
+!endif
+
 # additional plugins
 !addplugindir "${STUNNEL_TOOLS_DIR}/plugins/"
-!if ${ENABLE_FIPS}
-!include "${STUNNEL_TOOLS_DIR}/plugins/TextReplace.nsh"
-!endif
 
 !define MUI_ICON ${STUNNEL_SRC_DIR}\stunnel.ico
 
@@ -453,8 +457,45 @@ SectionGroup "Tools" groupTOOLS
 Section "openssl.exe" sectionOPENSSL
   SetOutPath "$INSTDIR\bin"
   File "${OPENSSL_BIN_DIR}\openssl.exe"
+
   SetOutPath "$INSTDIR\config"
   File "${STUNNEL_TOOLS_DIR}\openssl.cnf"
+!if ${SUFFIX} == "3"
+  Push "#providers = provider_sect"     # text to be replaced
+  Push "providers = provider_sect"      # replace with
+  Push 1                                # start replacing at the 1st occurrence
+  Push 1                                # replace 1 occurrences onwards, in all
+  Push "$INSTDIR\config\openssl.cnf"    # file to replace in
+  Call AdvReplaceInFile
+!endif
+
+!if ${ENABLE_FIPS}
+  # create fipsmodule.cnf
+  ExecWait '"$INSTDIR\bin\openssl.exe" fipsinstall -module "$INSTDIR\ossl-modules\fips.dll" \
+    -out "$INSTDIR\config\fipsmodule.cnf" -provider_name fips'
+
+  # modify fipsmodule.cnf and openssl.cnf to enable FIPS mode
+  Push "activate = 1"                   # text to be replaced
+  Push "#activate = 1"                  # replace with
+  Push 1                                # start replacing at the 1st occurrence
+  Push 1                                # replace 1 occurrences onwards, in all
+  Push "$INSTDIR\config\fipsmodule.cnf" # file to replace in
+  Call AdvReplaceInFile
+
+  Push "#.include"                      # text to be replaced
+  Push ".include"                       # replace with
+  Push 1                                # start replacing at the 1st occurrence
+  Push 1                                # replace 1 occurrences onwards, in all
+  Push "$INSTDIR\config\openssl.cnf"    # file to replace in
+  Call AdvReplaceInFile
+
+  Push "#fips = fips_sect"              # text to be replaced
+  Push "fips = fips_sect"               # replace with
+  Push 1                                # start replacing at the 1st occurrence
+  Push 1                                # replace 1 occurrences onwards, in all
+  Push "$INSTDIR\config\openssl.cnf"    # file to replace in
+  Call AdvReplaceInFile
+!endif
 
   # create stunnel.pem
   IfSilent no_new_pem
@@ -478,26 +519,6 @@ Section "tstunnel.exe" sectionTSTUNNEL
 SectionEnd
 
 SectionGroupEnd
-
-!if ${ENABLE_FIPS}
-SectionGroup "Providers" groupPROVIDERS
-
-Section /o "FIPS" sectionFIPS
-  # create fipsmodule.cnf
-  ExecWait '"$INSTDIR\bin\openssl.exe" fipsinstall -module "$INSTDIR\ossl-modules\fips.dll" \
-    -out "$INSTDIR\config\fipsmodule.cnf" -provider_name fips'
-
-  # modify fipsmodule.cnf and openssl.cnf to enable FIPS mode
-  ${textreplace::ReplaceInFile} "$INSTDIR\config\fipsmodule.cnf" "$INSTDIR\config\fipsmodule.cnf" \
-    "activate = 1" "#activate = 1" "/S=1 /C=0 /AO=1" $0
-  ${textreplace::ReplaceInFile} "$INSTDIR\config\openssl.cnf" "$INSTDIR\config\openssl.cnf" \
-    "#.include" ".include" "/S=1 /C=0 /AO=1" $0
-  ${textreplace::ReplaceInFile} "$INSTDIR\config\openssl.cnf" "$INSTDIR\config\openssl.cnf" \
-    "#fips = fips_sect" "fips = fips_sect" "/S=1 /C=0 /AO=1" $0
-SectionEnd
-
-SectionGroupEnd
-!endif
 
 SectionGroup "Shortcuts" groupSHORTCUTS
 
@@ -660,10 +681,6 @@ LangString DESC_sectionMENU ${LANG_ENGLISH} \
   "Installs the Start Menu shortcuts for managing stunnel."
 LangString DESC_sectionDESKTOP ${LANG_ENGLISH} \
   "Installs the Desktop shortcut for stunnel."
-!if ${ENABLE_FIPS}
-LangString DESC_sectionFIPS ${LANG_ENGLISH} \
-  "Generates a FIPS module configuration file and loads FIPS provider to enable."
-!endif
 /*
 LangString DESC_sectionDEBUG ${LANG_ENGLISH} \
   "Installs the .PDB (program database) files for the executables and libraries."
@@ -672,10 +689,6 @@ LangString DESC_groupTOOLS ${LANG_ENGLISH} \
   "Installs optional (but useful) tools."
 LangString DESC_groupSHORTCUTS ${LANG_ENGLISH} \
   "Installs menu and desktop shortcuts."
-!if ${ENABLE_FIPS}
-LangString DESC_groupPROVIDERS ${LANG_ENGLISH} \
-  "Installs OpenSSL providers."
-!endif
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${sectionCORE} $(DESC_sectionCORE)
@@ -683,17 +696,11 @@ LangString DESC_groupPROVIDERS ${LANG_ENGLISH} \
     !insertmacro MUI_DESCRIPTION_TEXT ${sectionTSTUNNEL} $(DESC_sectionTSTUNNEL)
     !insertmacro MUI_DESCRIPTION_TEXT ${sectionMENU} $(DESC_sectionMENU)
     !insertmacro MUI_DESCRIPTION_TEXT ${sectionDESKTOP} $(DESC_sectionDESKTOP)
-!if ${ENABLE_FIPS}
-    !insertmacro MUI_DESCRIPTION_TEXT ${sectionFIPS} $(DESC_sectionFIPS)
-!endif
 /*
     !insertmacro MUI_DESCRIPTION_TEXT ${sectionDEBUG} $(DESC_sectionDEBUG)
 */
     !insertmacro MUI_DESCRIPTION_TEXT ${groupTOOLS} $(DESC_groupTOOLS)
     !insertmacro MUI_DESCRIPTION_TEXT ${groupSHORTCUTS} $(DESC_groupSHORTCUTS)
-!if ${ENABLE_FIPS}
-    !insertmacro MUI_DESCRIPTION_TEXT ${groupPROVIDERS} $(DESC_groupPROVIDERS)
-!endif
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 # end of stunnel.nsi

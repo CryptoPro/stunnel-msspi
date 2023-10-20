@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2022 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2023 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -68,6 +68,12 @@
 
 typedef struct tls_data_struct TLS_DATA;
 typedef struct sock_opt_struct SOCK_OPT;
+typedef struct client_data_struct CLI;
+typedef struct global_options_struct GLOBAL_OPTIONS;
+typedef struct service_options_struct SERVICE_OPTIONS;
+#ifndef OPENSSL_NO_TLSEXT
+typedef struct servername_list_struct SERVERNAME_LIST;
+#endif /* !defined(OPENSSL_NO_TLSEXT) */
 
 /**************************************** data structures */
 
@@ -77,6 +83,62 @@ typedef struct sock_opt_struct SOCK_OPT;
 #ifdef USE_WIN32
     typedef HANDLE THREAD_ID;
 #endif
+
+#ifdef NO_OPENSSLOFF
+#define NO_OPENSSL_LOCKS OPENSSL_VERSION_NUMBER<0x10100004L
+#else /* NO_OPENSSLOFF */
+#define NO_OPENSSL_LOCKS 1
+#endif /* NO_OPENSSLOFF */
+
+#if NO_OPENSSL_LOCKS
+
+#ifdef USE_OS_THREADS
+
+struct CRYPTO_dynlock_value {
+#ifdef USE_PTHREAD
+    pthread_rwlock_t rwlock;
+#endif
+#ifdef USE_WIN32
+    CRITICAL_SECTION critical_section;
+#endif
+#ifdef DEBUG_LOCKS
+    const char *init_file, *read_lock_file, *write_lock_file,
+        *unlock_file, *destroy_file;
+    int init_line, read_lock_line, write_lock_line, unlock_line, destroy_line;
+#endif
+};
+
+typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK_stunnel;
+typedef void CRYPTO_RWLOCK;
+
+#else /* USE_OS_THREADS */
+
+typedef void CRYPTO_RWLOCK;
+
+#endif /* USE_OS_THREADS */
+
+#endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
+
+typedef enum {
+    LOCK_THREAD_LIST,                       /* sthreads.c */
+    LOCK_SESSION, LOCK_ADDR,
+    LOCK_CLIENTS, LOCK_SSL,                 /* client.c */
+    LOCK_REF,                               /* options.c */
+    LOCK_INET,                              /* resolver.c */
+#ifndef USE_WIN32
+    LOCK_LIBWRAP,                           /* libwrap.c */
+#endif
+    LOCK_LOG_BUFFER, LOCK_LOG_MODE,         /* log.c */
+    LOCK_LEAK_HASH, LOCK_LEAK_RESULTS,      /* str.c */
+#ifndef OPENSSL_NO_DH
+    LOCK_DH,                                /* ctx.c */
+#endif /* OPENSSL_NO_DH */
+#ifdef USE_WIN32
+    LOCK_WIN_LOG,                           /* ui_win_gui.c */
+#endif
+    LOCK_SECTIONS,                          /* traversing section list */
+    STUNNEL_LOCKS                           /* number of locks */
+} LOCK_TYPE;
 
 #if defined (USE_WIN32)
 #define ICON_IMAGE HICON
@@ -136,6 +198,7 @@ typedef struct sockaddr_list {                          /* list of addresses */
     NAME_LIST *names;                          /* a list of unresolved names */
 } SOCKADDR_LIST;
 
+extern GLOBAL_OPTIONS global_options;
 #ifndef OPENSSL_NO_COMP
 typedef enum {
     COMP_NONE,                           /* empty compression algorithms set */
@@ -145,7 +208,7 @@ typedef enum {
 } COMP_TYPE;
 #endif /* !defined(OPENSSL_NO_COMP) */
 
-typedef struct {
+struct global_options_struct {
         /* some data for TLS initialization in ssl.c */
 #ifndef OPENSSL_NO_COMP
     COMP_TYPE compression;                               /* compression type */
@@ -188,13 +251,7 @@ typedef struct {
         unsigned fips:1;                           /* enable FIPS 140-2 mode */
 #endif
     } option;
-} GLOBAL_OPTIONS;
-
-extern GLOBAL_OPTIONS global_options;
-
-#ifndef OPENSSL_NO_TLSEXT
-typedef struct servername_list_struct SERVERNAME_LIST;/* forward declaration */
-#endif /* !defined(OPENSSL_NO_TLSEXT) */
+};
 
 #ifndef OPENSSL_NO_PSK
 typedef struct psk_keys_struct {
@@ -216,7 +273,7 @@ typedef struct ticket_key_struct {
 } TICKET_KEY;
 #endif /* OpenSSL 1.0.0 or later */
 
-typedef struct service_options_struct {
+struct service_options_struct {
     struct service_options_struct *next;   /* next node in the services list */
     SSL_CTX *ctx;                                            /*  TLS context */
     char *servname;        /* service name for logging & permission checking */
@@ -242,13 +299,21 @@ typedef struct service_options_struct {
     SOCK_OPT *sock_opts;
 
         /* service-specific data for verify.c */
-    char *ca_dir;                              /* directory for hashed certs */
-    char *ca_file;                       /* file containing bunches of certs */
-    char *crl_dir;                              /* directory for hashed CRLs */
-    char *crl_file;                       /* file containing bunches of CRLs */
+#ifndef OPENSSL_NO_ENGINE
+    NAME_LIST *ca_engine;  /* engine-specific CA certificate identifier list */
+#endif
+    char *ca_dir;                    /* directory containing hashed CA certs */
+    char *ca_file;                  /* file containing concatenated CA certs */
+    char *crl_dir;                       /* directory containing hashed CRLs */
+    char *crl_file;                     /* file containing concatenated CRLs */
 #ifndef OPENSSL_NO_OCSP
     char *ocsp_url;
     unsigned long ocsp_flags;
+    CRYPTO_RWLOCK *ocsp_response_lock;    /* protect the OCSP response cache */
+    unsigned char *ocsp_response_der;                  /* OCSP response data */
+    int ocsp_response_len;                           /* OCSP response length */
+    unsigned stapling_cb_flag:1;          /* OCSP stapling callback executed */
+    unsigned verify_cb_flag:1;        /* verify callback executed at depth 0 */
 #endif /* !defined(OPENSSL_NO_OCSP) */
 #if OPENSSL_VERSION_NUMBER>=0x10002000L
     NAME_LIST *check_host, *check_email, *check_ip;   /* cert subject checks */
@@ -322,14 +387,19 @@ typedef struct service_options_struct {
     SSL_SESSION *session;    /* previous client session for delayed resolver */
     int timeout_busy;                       /* maximum waiting for data time */
     int timeout_close;                          /* maximum close_notify time */
-    int timeout_connect;                           /* maximum connect() time */
+    int timeout_connect;                         /* maximum s_connect() time */
     int timeout_idle;                        /* maximum idle connection time */
+    int timeout_ocsp;                   /* maximum s_connect() time for OCSP */
     enum {FAILOVER_RR, FAILOVER_PRIO} failover;         /* failover strategy */
     unsigned rr;   /* per-service sequential number for round-robin failover */
-    char *username;
+    char *username;                                 /* ident client username */
+    long retry;     /* retry delay for remote+program loop or -1 if disabled */
 
         /* service-specific data for protocol.c */
     char *protocol;
+    void (*protocol_early)(CLI *);
+    void (*protocol_middle)(CLI *);
+    void (*protocol_late)(CLI *);
     NAME_LIST *protocol_header;
     char *protocol_host;
     char *protocol_domain;
@@ -360,7 +430,6 @@ typedef struct service_options_struct {
         unsigned libwrap:1;
 #endif
         unsigned local:1;               /* outgoing interface specified */
-        unsigned retry:1;               /* loop remote+program */
         unsigned session_resume:1;      /* enable session resumption */
         unsigned sessiond:1;
 #ifndef USE_WIN32
@@ -375,6 +444,7 @@ typedef struct service_options_struct {
 #ifndef OPENSSL_NO_OCSP
         unsigned aia:1;                 /* Authority Information Access */
         unsigned nonce:1;               /* send and verify OCSP nonce */
+        unsigned ocsp_require:1;        /* require a conclusive OCSP response */
 #endif /* !defined(OPENSSL_NO_OCSP) */
 #ifndef OPENSSL_NO_DH
         unsigned dh_temp_params:1;
@@ -383,7 +453,7 @@ typedef struct service_options_struct {
         unsigned log_stderr:1;          /* a copy of the global switch */
 #endif /* USE_WIN32 */
     } option;
-} SERVICE_OPTIONS;
+};
 
 extern SERVICE_OPTIONS service_options;
 
@@ -436,13 +506,9 @@ typedef struct {
     int main_thread;
 } s_poll_set;
 
-typedef struct disk_file {
-#ifdef USE_WIN32
-    HANDLE fh;
-#else
-    int fd;
-#endif
-    /* the interface is prepared to easily implement buffering if needed */
+typedef struct {
+    /* stdio is currently used, but alternative implementations can be added */
+    FILE *f;
 } DISK_FILE;
 
     /* definitions for client.c */
@@ -458,7 +524,7 @@ typedef enum {
     RENEG_DETECTED /* renegotiation detected */
 } RENEG_STATE;
 
-typedef struct client_data_struct {
+struct client_data_struct {
 #ifdef MSSPISSL
     MSSPI_HANDLE msh;
 #ifdef MAPOIDSSL
@@ -496,6 +562,7 @@ typedef struct client_data_struct {
     FD remote_fd;                                  /* remote file descriptor */
     unsigned long pid;                           /* PID of the local process */
     SOCKET fd;                                  /* temporary file descriptor */
+    int fatal_alert;                               /* received a fatal alert */
     RENEG_STATE reneg_state;         /* used to track renegotiation attempts */
     unsigned long long seq;          /* sequential thread number for logging */
     unsigned rr;    /* per-client sequential number for round-robin failover */
@@ -511,7 +578,7 @@ typedef struct client_data_struct {
     struct {
         unsigned psk:1;                            /* PSK identity was found */
     } flag;
-} CLI;
+};
 
 /**************************************** prototypes for stunnel.c */
 
@@ -562,6 +629,8 @@ void set_nonblock(SOCKET, unsigned long);
 #define SINK_SYSLOG 1
 #define SINK_OUTFILE 2
 
+extern DISK_FILE *outfile;
+
 int log_open(int);
 void log_close(int);
 void log_flush(LOG_MODE);
@@ -571,6 +640,7 @@ void s_log(int, const char *, ...)
 #else
     ;
 #endif
+void s_vlog(int, const char *, va_list);
 char *log_id(CLI *);
 void fatal_debug(const char *, const char *, int) NORETURN;
 #define fatal(a) fatal_debug((a), __FILE__, __LINE__)
@@ -593,7 +663,8 @@ DH *get_dh2048(void);
 /**************************************** prototypes for cron.c */
 
 #ifdef USE_OS_THREADS
-extern THREAD_ID cron_thread_id;
+extern THREAD_ID per_second_thread_id;
+extern THREAD_ID per_day_thread_id;
 #endif
 
 int cron_init(void);
@@ -605,7 +676,7 @@ extern int index_session_authenticated, index_session_connect_address;
 
 int fips_default(void);
 int fips_available(void);
-void crypto_init(char *);
+void crypto_init(void);
 int ssl_init(void);
 int ssl_configure(GLOBAL_OPTIONS *);
 
@@ -619,6 +690,7 @@ extern int dh_temp_params;
 #endif /* OPENSSL_NO_DH */
 
 int context_init(SERVICE_OPTIONS *);
+void context_cleanup(SERVICE_OPTIONS *);
 #ifndef OPENSSL_NO_PSK
 void psk_sort(PSK_TABLE *, PSK_KEYS *);
 PSK_KEYS *psk_find(const PSK_TABLE *, const char *);
@@ -632,8 +704,19 @@ void sslerror(const char *);
 /**************************************** prototypes for verify.c */
 
 int verify_init(SERVICE_OPTIONS *);
-void print_client_CA_list(const STACK_OF(X509_NAME) *);
+#ifndef OPENSSL_NO_ENGINE
+X509 *engine_get_cert(ENGINE *, const char *);
+#endif
+void print_CA_list(const char *, const STACK_OF(X509_NAME) *);
 char *X509_NAME2text(X509_NAME *);
+
+/**************************************** prototypes for ocsp.c */
+
+#ifndef OPENSSL_NO_OCSP
+int ocsp_check(CLI *, X509_STORE_CTX *);      /* OCSP client-driven checking */
+int ocsp_init(SERVICE_OPTIONS *);            /* OCSP stapling initialization */
+void ocsp_cleanup(SERVICE_OPTIONS *);
+#endif /* !defined(OPENSSL_NO_OCSP) */
 
 /**************************************** prototypes for network.c */
 
@@ -666,6 +749,7 @@ void s_poll_sleep(int, int);
 int socket_options_set(SERVICE_OPTIONS *, SOCKET, int);
 int make_sockets(SOCKET[2]);
 int original_dst(const SOCKET, SOCKADDR_UNION *);
+int socket_needs_retry(CLI *, const char *);
 
 /**************************************** prototypes for client.c */
 
@@ -683,7 +767,7 @@ void throw_exception(CLI *, int) NORETURN;
 /**************************************** prototypes for network.c */
 
 int get_socket_error(const SOCKET);
-int s_connect(CLI *, SOCKADDR_UNION *, socklen_t);
+int s_connect(CLI *, SOCKADDR_UNION *, socklen_t, int);
 void s_write(CLI *, SOCKET fd, const void *, size_t);
 size_t s_read_eof(CLI *, SOCKET fd, void *, size_t);
 void s_read(CLI *, SOCKET fd, void *, size_t);
@@ -711,19 +795,12 @@ void ssl_printf(CLI *, const char *, ...)
 
 /**************************************** prototype for protocol.c */
 
-typedef enum {
-    PROTOCOL_CHECK,
-    PROTOCOL_EARLY,
-    PROTOCOL_MIDDLE,
-    PROTOCOL_LATE
-} PHASE;
-
 #ifdef USE_WIN32
 extern HWND capwin_hwnd;
 extern LONG capwin_connectivity;
 #endif
 
-const char *protocol(CLI *, SERVICE_OPTIONS *opt, const PHASE);
+const char *protocol_init(SERVICE_OPTIONS *);
 
 /**************************************** prototypes for resolver.c */
 
@@ -769,62 +846,7 @@ int getnameinfo(const struct sockaddr *, socklen_t,
 extern CLI *thread_head;
 #endif
 
-#ifdef NO_OPENSSLOFF
-#define NO_OPENSSL_LOCKS OPENSSL_VERSION_NUMBER<0x10100004L
-#else /* NO_OPENSSLOFF */
-#define NO_OPENSSL_LOCKS 1
-#endif /* NO_OPENSSLOFF */
-
-#if NO_OPENSSL_LOCKS
-
-#ifdef USE_OS_THREADS
-
-struct CRYPTO_dynlock_value {
-#ifdef USE_PTHREAD
-    pthread_rwlock_t rwlock;
-#endif
-#ifdef USE_WIN32
-    CRITICAL_SECTION critical_section;
-#endif
-#ifdef DEBUG_LOCKS
-    const char *init_file, *read_lock_file, *write_lock_file,
-        *unlock_file, *destroy_file;
-    int init_line, read_lock_line, write_lock_line, unlock_line, destroy_line;
-#endif
-};
-
-typedef void CRYPTO_RWLOCK;
-
-#else /* USE_OS_THREADS */
-
-typedef void CRYPTO_RWLOCK;
-
-#endif /* USE_OS_THREADS */
-
-#endif /* NO_OPENSSL_LOCKS */
-
-typedef enum {
-    LOCK_THREAD_LIST,                       /* sthreads.c */
-    LOCK_SESSION, LOCK_ADDR,
-    LOCK_CLIENTS, LOCK_SSL,                 /* client.c */
-    LOCK_REF,                               /* options.c */
-    LOCK_INET,                              /* resolver.c */
-#ifndef USE_WIN32
-    LOCK_LIBWRAP,                           /* libwrap.c */
-#endif
-    LOCK_LOG_BUFFER, LOCK_LOG_MODE,         /* log.c */
-    LOCK_LEAK_HASH, LOCK_LEAK_RESULTS,      /* str.c */
-#ifndef OPENSSL_NO_DH
-    LOCK_DH,                                /* ctx.c */
-#endif /* OPENSSL_NO_DH */
-#ifdef USE_WIN32
-    LOCK_WIN_LOG,                           /* ui_win_gui.c */
-#endif
-    LOCK_SECTIONS,                          /* traversing section list */
-    STUNNEL_LOCKS                           /* number of locks */
-} LOCK_TYPE;
-
-extern CRYPTO_RWLOCK *stunnel_locks[STUNNEL_LOCKS];
+extern CRYPTO_RWLOCK_stunnel *stunnel_locks[STUNNEL_LOCKS];
 
 #if NO_OPENSSL_LOCKS
 /* Emulate the OpenSSL 1.1 locking API for older OpenSSL versions */
@@ -869,12 +891,14 @@ void ignore_value(void *);
 /**************************************** prototypes for file.c */
 
 #ifndef USE_WIN32
-DISK_FILE *file_fdopen(int);
+DISK_FILE *file_fdopen(int, FILE_MODE mode);
 #endif
 DISK_FILE *file_open(char *, FILE_MODE mode);
 void file_close(DISK_FILE *);
 ssize_t file_getline(DISK_FILE *, char *, int);
-ssize_t file_putline(DISK_FILE *, char *);
+ssize_t file_putline_nonewline(DISK_FILE *, char *);
+ssize_t file_putline_newline(DISK_FILE *, char *);
+int file_flush(DISK_FILE *);
 int file_permissions(const char *);
 
 #ifdef USE_WIN32
@@ -910,8 +934,9 @@ struct tls_data_struct {
     const char *id;
 };
 
-void str_init(TLS_DATA *);
-void str_cleanup(TLS_DATA *);
+void str_init(void);
+void str_thread_init(TLS_DATA *);
+void str_thread_cleanup(TLS_DATA *);
 char *str_dup_debug(const char *, const char *, int);
 #define str_dup(a) str_dup_debug((a), __FILE__, __LINE__)
 char *str_dup_detached_debug(const char *, const char *, int);
@@ -1029,6 +1054,8 @@ int SSL_get_error_prx( const SSL *s, int ret_code );
 int SSL_get_error_msspi( MSSPI_HANDLE h, int ret );
 #undef SSL_get_error
 #define SSL_get_error( s, i ) ( c->msh ? SSL_get_error_msspi( c->msh, i ) : SSL_get_error_prx( s, i ) )
+
+#undef SSL_R_UNEXPECTED_EOF_WHILE_READING
 #endif /* MSSPISSL */
 
 #endif /* defined PROTOTYPES_H */

@@ -1,5 +1,5 @@
 ## mingw/mingw64 Makefile
-# by Michal Trojnara 1998-2022
+# by Michal Trojnara 1998-2023
 
 # 32-bit Windows
 #win32_arch=win32
@@ -20,7 +20,7 @@ endif
 win32_cppflags = -I$(win32_ssl_dir)/include
 win32_cflags = -g -mthreads -O2
 win32_cflags += -fstack-protector
-win32_cflags += -Wall -Wextra -Wpedantic -Wconversion -Wno-long-long -ansi
+win32_cflags += -Wall -Wextra -Wpedantic -Wconversion -std=c99
 win32_cflags += -D_FORTIFY_SOURCE=2 -DUNICODE -D_UNICODE
 win32_ldflags = -g -mthreads -pipe
 win32_ldflags += -fstack-protector
@@ -50,7 +50,7 @@ win32_cli_libs = $(win32_common_libs) $(win32_ssl_libs)
 
 common_headers = common.h prototypes.h version.h
 win32_common = tls str file client log options protocol network resolver
-win32_common += ssl ctx verify sthreads fd dhparam cron stunnel
+win32_common += ssl ctx verify ocsp sthreads fd dhparam cron stunnel
 win32_gui = ui_win_gui resources
 win32_cli = ui_win_cli
 win32_common_objs = $(addsuffix .o, $(addprefix $(objdir)/, $(win32_common)))

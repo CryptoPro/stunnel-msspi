@@ -1,6 +1,11 @@
 # stunnel TODO
 
 
+### Updated defaults planned for stunnel 6.xx
+More secure defaults planned for the next major version.
+
+* OCSPaia = yes
+
 ### High priority features
 These features will likely be supported some day.
 A sponsor could allocate my time to get them faster.
@@ -17,13 +22,13 @@ A sponsor could allocate my time to get them faster.
 * MSI installer for Windows.
 * Add 'leastconn' failover strategy to order defined 'connect' targets
   by the number of active connections.
-* Optional line-buffering of the log file.
+* MariaDB (formerly MySQL) protocol negotiation:
+  [MariaDB Handshake Protocol](https://mariadb.com/kb/en/connection/)
 
 ### Low priority features
 These features will unlikely ever be supported.
 
 * Database and/or directory interface for retrieving PSK secrets.
-* Support static FIPS-enabled builds.
 * Service-level logging destination.
 * Logging to NT EventLog on Windows.
 * Internationalization of logged messages (i18n).

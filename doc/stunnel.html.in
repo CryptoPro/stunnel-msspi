@@ -242,9 +242,13 @@
 
 <p>debugging level</p>
 
-<p>Level is one of the syslog level names or numbers emerg (0), alert (1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7). All logs for the specified level and all levels numerically less than it will be shown. Use <i>debug = debug</i> or <i>debug = 7</i> for greatest debugging output. The default is notice (5).</p>
+<p>Level is one of the syslog level names or numbers emerg (0), alert (1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7). All logs for the specified level and all levels numerically less than it will be shown.</p>
 
-<p>The syslog facility &#39;daemon&#39; will be used unless a facility name is supplied. (Facilities are not supported on Win32.)</p>
+<p>The <i>debug = debug</i> (or the equivalent &lt;debug = 7&gt;) level produces for the most verbose log output. This logging level is only meant to be understood by stunnel developers, and not by users. Please either use the debug level when requested to do so by an stunnel developer, or when you intend to get confused.</p>
+
+<p>The default logging level is notice (5).</p>
+
+<p>The syslog &#39;daemon&#39; facility will be used unless a facility name is supplied. (Facilities are not supported on Win32.)</p>
 
 <p>Case is ignored for both facilities and levels.</p>
 
@@ -424,17 +428,29 @@
 
 <p>To listen on all IPv6 addresses use:</p>
 
-<pre><code>    accept = :::PORT</code></pre>
+<pre><code>accept = :::PORT</code></pre>
 
 </dd>
-<dt id="CApath-DIRECTORY"><b>CApath</b> = DIRECTORY</dt>
+<dt id="CAengine-ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER"><b>CAengine</b> = ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER</dt>
 <dd>
 
-<p>Certificate Authority directory</p>
+<p>load a trusted CA certificate from an engine</p>
 
-<p>This is the directory in which <b>stunnel</b> will look for certificates when using the <i>verifyChain</i> or <i>verifyPeer</i> options. Note that the certificates in this directory should be named XXXXXXXX.0 where XXXXXXXX is the hash value of the DER encoded subject of the cert.</p>
+<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
 
-<p>The hash algorithm has been changed in <b>OpenSSL 1.0.0</b>. It is required to c_rehash the directory on upgrade from <b>OpenSSL 0.x.x</b> to <b>OpenSSL 1.x.x</b>.</p>
+<p>Multiple <i>CAengine</i> options are allowed in a single service section.</p>
+
+<p>Currently supported engines: pkcs11, cng.</p>
+
+</dd>
+<dt id="CApath-CA_DIRECTORY"><b>CApath</b> = CA_DIRECTORY</dt>
+<dd>
+
+<p>load trusted CA certificates from a directory</p>
+
+<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options. Note that the certificates in this directory should be named XXXXXXXX.0 where XXXXXXXX is the hash value of the DER encoded subject of the cert.</p>
+
+<p>The hash algorithm has been changed in <b>OpenSSL 1.0.0</b>. It is required to c_rehash the directory on upgrade from <b>OpenSSL 0.x.x</b> to <b>OpenSSL 1.x.x</b> or later.</p>
 
 <p><i>CApath</i> path is relative to the <i>chroot</i> directory if specified.</p>
 
@@ -442,9 +458,9 @@
 <dt id="CAfile-CA_FILE"><b>CAfile</b> = CA_FILE</dt>
 <dd>
 
-<p>Certificate Authority file</p>
+<p>load trusted CA certificates from a file</p>
 
-<p>This file contains multiple CA certificates, to be used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
+<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
 
 </dd>
 <dt id="cert-CERT_FILE"><b>cert</b> = CERT_FILE</dt>
@@ -462,9 +478,11 @@
 <dt id="checkEmail-EMAIL"><b>checkEmail</b> = EMAIL</dt>
 <dd>
 
-<p>email address of the peer certificate subject</p>
+<p>verify the email address of the end-entity (leaf) peer certificate subject</p>
 
-<p>Multiple <i>checkEmail</i> options are allowed in a single service section. Certificates are accepted if no subject checks were specified, or the email address of the peer certificate matches any of the email addresses specified with <i>checkEmail</i>.</p>
+<p>Certificates are accepted if no subject checks were specified, or the email address of the end-entity (leaf) peer certificate matches any of the email addresses specified with <i>checkEmail</i>.</p>
+
+<p>Multiple <i>checkEmail</i> options are allowed in a single service section.</p>
 
 <p>This option requires OpenSSL 1.0.2 or later.</p>
 
@@ -472,9 +490,11 @@
 <dt id="checkHost-HOST"><b>checkHost</b> = HOST</dt>
 <dd>
 
-<p>host of the peer certificate subject</p>
+<p>verify the host of the end-entity (leaf) peer certificate subject</p>
 
-<p>Multiple <i>checkHost</i> options are allowed in a single service section. Certificates are accepted if no subject checks were specified, or the host name of the peer certificate matches any of the hosts specified with <i>checkHost</i>.</p>
+<p>Certificates are accepted if no subject checks were specified, or the host name of the end-entity (leaf) peer certificate matches any of the hosts specified with <i>checkHost</i>.</p>
+
+<p>Multiple <i>checkHost</i> options are allowed in a single service section.</p>
 
 <p>This option requires OpenSSL 1.0.2 or later.</p>
 
@@ -482,9 +502,11 @@
 <dt id="checkIP-IP"><b>checkIP</b> = IP</dt>
 <dd>
 
-<p>IP address of the peer certificate subject</p>
+<p>verify the IP address of the end-entity (leaf) peer certificate subject</p>
 
-<p>Multiple <i>checkIP</i> options are allowed in a single service section. Certificates are accepted if no subject checks were specified, or the IP address of the peer certificate matches any of the IP addresses specified with <i>checkIP</i>.</p>
+<p>Certificates are accepted if no subject checks were specified, or the IP address of the end-entity (leaf) peer certificate matches any of the IP addresses specified with <i>checkIP</i>.</p>
+
+<p>Multiple <i>checkIP</i> options are allowed in a single service section.</p>
 
 <p>This option requires OpenSSL 1.0.2 or later.</p>
 
@@ -540,9 +562,7 @@
 
 <p>If no host is specified, the host defaults to localhost.</p>
 
-<p>Multiple <i>connect</i> options are allowed in a single service section.</p>
-
-<p>If host resolves to multiple addresses and/or if multiple <i>connect</i> options are specified, then the remote address is chosen using a round-robin algorithm.</p>
+<p>Multiple <i>connect</i> options are allowed in a single service section. If host resolves to multiple addresses and/or if multiple <i>connect</i> options are specified, then the remote address is chosen using a round-robin algorithm.</p>
 
 </dd>
 <dt id="CRLpath-DIRECTORY"><b>CRLpath</b> = DIRECTORY</dt>
@@ -574,13 +594,13 @@
 
 <p>To get a list of supported curves use:</p>
 
-<pre><code>    openssl ecparam -list_curves</code></pre>
+<pre><code>openssl ecparam -list_curves</code></pre>
 
 <p>default:</p>
 
-<pre><code>    X25519:P-256:X448:P-521:P-384 (OpenSSL 1.1.1 or later)
+<pre><code>X25519:P-256:X448:P-521:P-384 (OpenSSL 1.1.1 or later)
 
-    prime256v1 (OpenSSL older than 1.1.1)</code></pre>
+prime256v1 (OpenSSL older than 1.1.1)</code></pre>
 
 </dd>
 <dt id="logId-TYPE"><b>logId</b> = TYPE</dt>
@@ -718,13 +738,13 @@
 
 <p>for global options:</p>
 
-<pre><code>        00-global.conf</code></pre>
+<pre><code>00-global.conf</code></pre>
 
 <p>for local service-level options:</p>
 
-<pre><code>        01-service.conf
+<pre><code>01-service.conf
 
-        02-service.conf</code></pre>
+02-service.conf</code></pre>
 
 </dd>
 <dt id="key-KEY_FILE"><b>key</b> = KEY_FILE</dt>
@@ -734,7 +754,7 @@
 
 <p>A private key is needed to authenticate the certificate owner. Since this file should be kept secret it should only be readable by its owner. On Unix systems you can use the following command:</p>
 
-<pre><code>    chmod 600 keyfile</code></pre>
+<pre><code>chmod 600 keyfile</code></pre>
 
 <p>This parameter is also used as the private key identifier when a hardware engine is enabled.</p>
 
@@ -758,7 +778,7 @@
 <dt id="OCSP-URL"><b>OCSP</b> = URL</dt>
 <dd>
 
-<p>select OCSP responder for certificate verification</p>
+<p>select OCSP responder for the end-entity (leaf) peer certificate verification</p>
 
 </dd>
 <dt id="OCSPaia-yes-no"><b>OCSPaia</b> = yes | no</dt>
@@ -787,6 +807,16 @@
 <p>This option protects the OCSP protocol against replay attacks. Due to its computational overhead, the nonce extension is usually only supported on internal (e.g. corporate) responders, and not on public OCSP responders.</p>
 
 </dd>
+<dt id="OCSPrequire-yes-no"><b>OCSPrequire</b> = yes | no</dt>
+<dd>
+
+<p>require a conclusive OCSP response</p>
+
+<p>Disable this option to allow a connection even though no conclusive OCSP response was retrieved from stapling and a direct request to the OCSP responder.</p>
+
+<p>default: yes</p>
+
+</dd>
 <dt id="options-SSL_OPTIONS"><b>options</b> = SSL_OPTIONS</dt>
 <dd>
 
@@ -798,12 +828,12 @@
 
 <p>For example, for compatibility with the erroneous Eudora TLS implementation, the following option can be used:</p>
 
-<pre><code>    options = DONT_INSERT_EMPTY_FRAGMENTS</code></pre>
+<pre><code>options = DONT_INSERT_EMPTY_FRAGMENTS</code></pre>
 
 <p>default:</p>
 
-<pre><code>    options = NO_SSLv2
-    options = NO_SSLv3</code></pre>
+<pre><code>options = NO_SSLv2
+options = NO_SSLv3</code></pre>
 
 <p>Use <i>sslVersionMax</i> or <i>sslVersionMin</i> option instead of disabling specific TLS protocol versions when compiled with <b>OpenSSL 1.1.0</b> or later.</p>
 
@@ -979,7 +1009,7 @@
 
 <p>Each line of the file in the following format:</p>
 
-<pre><code>    IDENTITY:KEY</code></pre>
+<pre><code>IDENTITY:KEY</code></pre>
 
 <p>Hexadecimal keys are automatically converted to binary form. Keys are required to be at least 16 bytes long, which implies at least 32 characters for hexadecimal keys. The file should neither be world-readable nor world-writable.</p>
 
@@ -1024,10 +1054,12 @@
 <p>default: yes</p>
 
 </dd>
-<dt id="retry-yes-no"><b>retry</b> = yes | no</dt>
+<dt id="retry-yes-no-DELAY"><b>retry</b> = yes | no | DELAY</dt>
 <dd>
 
 <p>reconnect a connect+exec section after it was disconnected</p>
+
+<p>The DELAY value specifies the number of milliseconds before retrying. &quot;retry = yes&quot; has the same effect as &quot;retry = 1000&quot;.</p>
 
 <p>default: no</p>
 
@@ -1153,15 +1185,15 @@
 <dt id="sni-SERVICE_NAME:SERVER_NAME_PATTERN-server-mode"><b>sni</b> = SERVICE_NAME:SERVER_NAME_PATTERN (server mode)</dt>
 <dd>
 
-<p>Use the service as a slave service (a name-based virtual server) for Server Name Indication TLS extension (RFC 3546).</p>
+<p>Use the service as a secondary service (a name-based virtual server) for Server Name Indication TLS extension (RFC 3546).</p>
 
-<p><i>SERVICE_NAME</i> specifies the master service that accepts client connections with the <i>accept</i> option. <i>SERVER_NAME_PATTERN</i> specifies the host name to be redirected. The pattern may start with the &#39;*&#39; character, e.g. &#39;*.example.com&#39;. Multiple slave services are normally specified for a single master service. The <i>sni</i> option can also be specified more than once within a single slave service.</p>
+<p><i>SERVICE_NAME</i> specifies the primary service that accepts client connections with the <i>accept</i> option. <i>SERVER_NAME_PATTERN</i> specifies the host name to be redirected. The pattern may start with the &#39;*&#39; character, e.g. &#39;*.example.com&#39;. Multiple secondary services are normally specified for a single primary service. The <i>sni</i> option can also be specified more than once within a single secondary service.</p>
 
-<p>This service, as well as the master service, may not be configured in client mode.</p>
+<p>This service, as well as the primary service, may not be configured in client mode.</p>
 
-<p>The <i>connect</i> option of the slave service is ignored when the <i>protocol</i> option is specified, as <i>protocol</i> connects to the remote host before TLS handshake.</p>
+<p>The <i>connect</i> option of the secondary service is ignored when the <i>protocol</i> option is specified, as <i>protocol</i> connects to the remote host before TLS handshake.</p>
 
-<p>Libwrap checks (Unix only) are performed twice: with the master service name after TCP connection is accepted, and with the slave service name during the TLS handshake.</p>
+<p>Libwrap checks (Unix only) are performed twice: with the primary service name after TCP connection is accepted, and with the secondary service name during the TLS handshake.</p>
 
 <p>The <i>sni</i> option is only available when compiled with <b>OpenSSL 1.0.0</b> and later.</p>
 
@@ -1185,15 +1217,15 @@
 
 <p>Examples:</p>
 
-<pre><code>    socket = l:SO_LINGER=1:60
-        set one minute timeout for closing local socket
-    socket = r:SO_OOBINLINE=yes
-        place out-of-band data directly into the
-        receive data stream for remote sockets
-    socket = a:SO_REUSEADDR=no
-        disable address reuse (enabled by default)
-    socket = a:SO_BINDTODEVICE=lo
-        only accept connections on loopback interface</code></pre>
+<pre><code>socket = l:SO_LINGER=1:60
+    set one minute timeout for closing local socket
+socket = r:SO_OOBINLINE=yes
+    place out-of-band data directly into the
+    receive data stream for remote sockets
+socket = a:SO_REUSEADDR=no
+    disable address reuse (enabled by default)
+socket = a:SO_BINDTODEVICE=lo
+    only accept connections on loopback interface</code></pre>
 
 </dd>
 <dt id="sslVersion-SSL_VERSION"><b>sslVersion</b> = SSL_VERSION</dt>
@@ -1209,12 +1241,12 @@
 
 <p>Setting the option</p>
 
-<pre><code>    sslVersion = SSL_VERSION</code></pre>
+<pre><code>sslVersion = SSL_VERSION</code></pre>
 
 <p>is equivalent to options</p>
 
-<pre><code>    sslVersionMax = SSL_VERSION
-    sslVersionMin = SSL_VERSION</code></pre>
+<pre><code>sslVersionMax = SSL_VERSION
+sslVersionMin = SSL_VERSION</code></pre>
 
 <p>when compiled with <b>OpenSSL 1.1.0</b> and later.</p>
 
@@ -1306,13 +1338,19 @@
 <dt id="TIMEOUTconnect-SECONDS"><b>TIMEOUTconnect</b> = SECONDS</dt>
 <dd>
 
-<p>time to wait to connect to a remote host</p>
+<p>time to wait to connect a remote host</p>
 
 </dd>
 <dt id="TIMEOUTidle-SECONDS"><b>TIMEOUTidle</b> = SECONDS</dt>
 <dd>
 
 <p>time to keep an idle connection</p>
+
+</dd>
+<dt id="TIMEOUTocsp-SECONDS"><b>TIMEOUTocsp</b> = SECONDS</dt>
+<dd>
+
+<p>time to wait to connect an OCSP responder</p>
 
 </dd>
 <dt id="transparent-none-source-destination-both-Unix-only"><b>transparent</b> = none | source | destination | both (Unix only)</dt>
@@ -1346,13 +1384,13 @@
 
 <p>This configuration requires the following setup for iptables and routing (possibly in /etc/rc.local or equivalent file):</p>
 
-<pre><code>    iptables -t mangle -N DIVERT
-    iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
-    iptables -t mangle -A DIVERT -j MARK --set-mark 1
-    iptables -t mangle -A DIVERT -j ACCEPT
-    ip rule add fwmark 1 lookup 100
-    ip route add local 0.0.0.0/0 dev lo table 100
-    echo 0 &gt;/proc/sys/net/ipv4/conf/lo/rp_filter</code></pre>
+<pre><code>iptables -t mangle -N DIVERT
+iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
+iptables -t mangle -A DIVERT -j MARK --set-mark 1
+iptables -t mangle -A DIVERT -j ACCEPT
+ip rule add fwmark 1 lookup 100
+ip route add local 0.0.0.0/0 dev lo table 100
+echo 0 &gt;/proc/sys/net/ipv4/conf/lo/rp_filter</code></pre>
 
 <p><b>stunnel</b> must also to be executed as root and without the <i>setuid</i> option.</p>
 
@@ -1387,24 +1425,24 @@
 
 <p>A service section for transparent destination may look like this:</p>
 
-<pre><code>    [transparent]
-    client = yes
-    accept = &lt;stunnel_port&gt;
-    transparent = destination</code></pre>
+<pre><code>[transparent]
+client = yes
+accept = &lt;stunnel_port&gt;
+transparent = destination</code></pre>
 
 <p>This configuration requires iptables setup to work, possibly in /etc/rc.local or equivalent file.</p>
 
 <p>For a connect target installed on the same host:</p>
 
-<pre><code>    /sbin/iptables -t nat -I OUTPUT -p tcp --dport &lt;redirected_port&gt; \
-        -m ! --uid-owner &lt;stunnel_user_id&gt; \
-        -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
+<pre><code>/sbin/iptables -t nat -I OUTPUT -p tcp --dport &lt;redirected_port&gt; \
+    -m ! --uid-owner &lt;stunnel_user_id&gt; \
+    -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
 
 <p>For a connect target installed on a remote host:</p>
 
-<pre><code>    /sbin/iptables -I INPUT -i eth0 -p tcp --dport &lt;stunnel_port&gt; -j ACCEPT
-    /sbin/iptables -t nat -I PREROUTING -p tcp --dport &lt;redirected_port&gt; \
-        -i eth0 -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
+<pre><code>/sbin/iptables -I INPUT -i eth0 -p tcp --dport &lt;stunnel_port&gt; -j ACCEPT
+/sbin/iptables -t nat -I PREROUTING -p tcp --dport &lt;redirected_port&gt; \
+    -i eth0 -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
 
 <p>The transparent destination option is currently only supported on Linux.</p>
 
@@ -1448,31 +1486,31 @@
 <dt id="level-01">level 0</dt>
 <dd>
 
-<p>Request and ignore the peer certificate.</p>
+<p>Request and ignore the peer certificate chain.</p>
 
 </dd>
 <dt id="level-11">level 1</dt>
 <dd>
 
-<p>Verify the peer certificate if present.</p>
+<p>Verify the peer certificate chain if present.</p>
 
 </dd>
 <dt id="level-21">level 2</dt>
 <dd>
 
-<p>Verify the peer certificate.</p>
+<p>Verify the peer certificate chain.</p>
 
 </dd>
 <dt id="level-31">level 3</dt>
 <dd>
 
-<p>Verify the peer against a locally installed certificate.</p>
+<p>Verify the peer certificate chain and the end-entity (leaf) peer certificate against a locally installed certificate.</p>
 
 </dd>
 <dt id="level-41">level 4</dt>
 <dd>
 
-<p>Ignore the chain and only verify the peer certificate.</p>
+<p>Ignore the peer certificate chain and only verify the end-entity (leaf) peer certificate against a locally installed certificate.</p>
 
 </dd>
 <dt id="default">default</dt>
@@ -1499,9 +1537,9 @@
 <dt id="verifyPeer-yes-no"><b>verifyPeer</b> = yes | no</dt>
 <dd>
 
-<p>verify the peer certificate</p>
+<p>verify the end-entity (leaf) peer certificate</p>
 
-<p>The peer certificate needs to be stored either in the file specified with <i>CAfile</i>, or in the directory specified with <i>CApath</i>.</p>
+<p>The end-entity (leaf) peer certificate needs to be stored either in the file specified with <i>CAfile</i>, or in the directory specified with <i>CApath</i>.</p>
 
 <p>default: no</p>
 
@@ -1575,116 +1613,116 @@
 
 <p>In order to provide TLS encapsulation to your local <i>imapd</i> service, use:</p>
 
-<pre><code>    [imapd]
-    accept = 993
-    exec = /usr/sbin/imapd
-    execArgs = imapd</code></pre>
+<pre><code>[imapd]
+accept = 993
+exec = /usr/sbin/imapd
+execArgs = imapd</code></pre>
 
 <p>or in remote mode:</p>
 
-<pre><code>    [imapd]
-    accept = 993
-    connect = 143</code></pre>
+<pre><code>[imapd]
+accept = 993
+connect = 143</code></pre>
 
 <p>In order to let your local e-mail client connect to a TLS-enabled <i>imapd</i> service on another server, configure the e-mail client to connect to localhost on port 119 and use:</p>
 
-<pre><code>    [imap]
-    client = yes
-    accept = 143
-    connect = servername:993</code></pre>
+<pre><code>[imap]
+client = yes
+accept = 143
+connect = servername:993</code></pre>
 
 <p>If you want to provide tunneling to your <i>pppd</i> daemon on port 2020, use something like:</p>
 
-<pre><code>    [vpn]
-    accept = 2020
-    exec = /usr/sbin/pppd
-    execArgs = pppd local
-    pty = yes</code></pre>
+<pre><code>[vpn]
+accept = 2020
+exec = /usr/sbin/pppd
+execArgs = pppd local
+pty = yes</code></pre>
 
 <p>If you want to use <b>stunnel</b> in <i>inetd</i> mode to launch your imapd process, you&#39;d use this <i>stunnel.conf</i>. Note there must be no <i>[service_name]</i> section.</p>
 
-<pre><code>    exec = /usr/sbin/imapd
-    execArgs = imapd</code></pre>
+<pre><code>exec = /usr/sbin/imapd
+execArgs = imapd</code></pre>
 
 <p>To setup SOCKS VPN configure the following client service:</p>
 
-<pre><code>    [socks_client]
-    client = yes
-    accept = 127.0.0.1:1080
-    connect = vpn_server:9080
-    verifyPeer = yes
-    CAfile = stunnel.pem</code></pre>
+<pre><code>[socks_client]
+client = yes
+accept = 127.0.0.1:1080
+connect = vpn_server:9080
+verifyPeer = yes
+CAfile = stunnel.pem</code></pre>
 
 <p>The corresponding configuration on the vpn_server host:</p>
 
-<pre><code>    [socks_server]
-    protocol = socks
-    accept = 9080
-    cert = stunnel.pem
-    key = stunnel.key</code></pre>
+<pre><code>[socks_server]
+protocol = socks
+accept = 9080
+cert = stunnel.pem
+key = stunnel.key</code></pre>
 
 <p>Now test your configuration on the client machine with:</p>
 
-<pre><code>    curl --socks4a localhost http://www.example.com/</code></pre>
+<pre><code>curl --socks4a localhost http://www.example.com/</code></pre>
 
 <p>An example server mode SNI configuration:</p>
 
-<pre><code>    [virtual]
-    ; master service
-    accept = 443
-    cert =  default.pem
-    connect = default.internal.mydomain.com:8080
+<pre><code>[virtual]
+; primary service
+accept = 443
+cert =  default.pem
+connect = default.internal.mydomain.com:8080
 
-    [sni1]
-    ; slave service 1
-    sni = virtual:server1.mydomain.com
-    cert = server1.pem
-    connect = server1.internal.mydomain.com:8081
+[sni1]
+; secondary service 1
+sni = virtual:server1.mydomain.com
+cert = server1.pem
+connect = server1.internal.mydomain.com:8081
 
-    [sni2]
-    ; slave service 2
-    sni = virtual:server2.mydomain.com
-    cert = server2.pem
-    connect = server2.internal.mydomain.com:8082
-    verifyPeer = yes
-    CAfile = server2-allowed-clients.pem</code></pre>
+[sni2]
+; secondary service 2
+sni = virtual:server2.mydomain.com
+cert = server2.pem
+connect = server2.internal.mydomain.com:8082
+verifyPeer = yes
+CAfile = server2-allowed-clients.pem</code></pre>
 
 <p>An example of advanced engine configuration allows for authentication with private keys stored in the Windows certificate store (Windows only). With the CAPI engine you don&#39;t need to manually select the client key to use. The client key is automatically selected based on the list of CAs trusted by the server.</p>
 
-<pre><code>    engine = capi
+<pre><code>engine = capi
 
-    [service]
-    engineId = capi
-    client = yes
-    accept = 127.0.0.1:8080
-    connect = example.com:8443</code></pre>
+[service]
+engineId = capi
+client = yes
+accept = 127.0.0.1:8080
+connect = example.com:8443</code></pre>
 
 <p>An example of advanced engine configuration to use the certificate and the corresponding private key from a pkcs11 engine:</p>
 
-<pre><code>    engine = pkcs11
-    engineCtrl = MODULE_PATH:opensc-pkcs11.so
-    engineCtrl = PIN:123456
+<pre><code>engine = pkcs11
+engineCtrl = MODULE_PATH:opensc-pkcs11.so
+engineCtrl = PIN:123456
 
-    [service]
-    engineId = pkcs11
-    client = yes
-    accept = 127.0.0.1:8080
-    connect = example.com:843
-    cert = pkcs11:token=MyToken;object=MyCert
-    key = pkcs11:token=MyToken;object=MyKey</code></pre>
+[service]
+engineId = pkcs11
+client = yes
+accept = 127.0.0.1:8080
+connect = example.com:843
+cert = pkcs11:token=MyToken;object=MyCert
+key = pkcs11:token=MyToken;object=MyKey</code></pre>
 
 <p>An example of advanced engine configuration to use the certificate and the corresponding private key from a SoftHSM token:</p>
 
-<pre><code>    engine = pkcs11
-    engineCtrl = MODULE_PATH:softhsm2.dll
-    engineCtrl = PIN:12345
+<pre><code>engine = pkcs11
+engineCtrl = MODULE_PATH:softhsm2.dll
+engineCtrl = PIN:12345
 
-    [service]
-    engineId = pkcs11
-    client = yes
-    accept = 127.0.0.1:8080
-    connect = example.com:843
-    cert = pkcs11:token=MyToken;object=KeyCert</code></pre>
+[service]
+engineId = pkcs11
+client = yes
+accept = 127.0.0.1:8080
+connect = example.com:843
+cert = pkcs11:token=MyToken;object=KeyCert</code></pre>
 
 <a href="#_podtop_"><h1 id="NOTES">NOTES</h1></a>
 
@@ -1698,7 +1736,7 @@
 
 <p>For example, if you have the following line in <i>inetd.conf</i>:</p>
 
-<pre><code>    imaps stream tcp nowait root @bindir@/stunnel stunnel @sysconfdir@/stunnel/imaps.conf</code></pre>
+<pre><code>imaps stream tcp nowait root @bindir@/stunnel stunnel @sysconfdir@/stunnel/imaps.conf</code></pre>
 
 <p>In these cases, the <i>inetd</i>-style program is responsible for binding a network socket (<i>imaps</i> above) and handing it to <b>stunnel</b> when a connection is received. Thus you do not want <b>stunnel</b> to have any <i>accept</i> option. All the <i>Service Level Options</i> should be placed in the global options section, and no <i>[service_name]</i> section will be present. See the <i>EXAMPLES</i> section for example configurations.</p>
 
@@ -1708,12 +1746,12 @@
 
 <p>The <i>.pem</i> file should contain the unencrypted private key and a signed certificate (not certificate request). So the file should look like this:</p>
 
-<pre><code>    -----BEGIN RSA PRIVATE KEY-----
-    [encoded key]
-    -----END RSA PRIVATE KEY-----
-    -----BEGIN CERTIFICATE-----
-    [encoded certificate]
-    -----END CERTIFICATE-----</code></pre>
+<pre><code>-----BEGIN RSA PRIVATE KEY-----
+[encoded key]
+-----END RSA PRIVATE KEY-----
+-----BEGIN CERTIFICATE-----
+[encoded certificate]
+-----END CERTIFICATE-----</code></pre>
 
 <h2 id="RANDOMNESS">RANDOMNESS</h2>
 
@@ -1759,7 +1797,7 @@
 
 <p>Alternatively, it is possible to specify static DH parameters in the certificate file, which disables generating temporary DH parameters:</p>
 
-<pre><code>    openssl dhparam 2048 &gt;&gt; stunnel.pem</code></pre>
+<pre><code>openssl dhparam 2048 &gt;&gt; stunnel.pem</code></pre>
 
 <a href="#_podtop_"><h1 id="FILES">FILES</h1></a>
 
