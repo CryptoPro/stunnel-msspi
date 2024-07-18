@@ -867,9 +867,16 @@ NOEXPORT void ssl_start(CLI *c) {
             char * cert = j == 0 ? c->opt->cert : c->opt->cert2;
             char * pin = j == 0 ? c->opt->pin : c->opt->pin2;
             char * pcerttype = j == 0 ? &c->opt->certtype : &c->opt->certtype2;
+            // certtype:
+            // 0 - not detected yet
+            // 1 - string with thumbprint or name
+            // 2 - string with pfx
+            // 3 - path to cert file
+            // 4 - path to pfx file
             char certtype = *pcerttype;
             char is_ok = 0;
             char is_pfx = 0;
+            char is_cert_file = 0;
 
             if( !cert )
             {
@@ -931,11 +938,32 @@ NOEXPORT void ssl_start(CLI *c) {
                         errstr = "can not read file";
                         break;
                     }
-                    if( ( certtype == 0 || certtype == 3 ) && msspi_add_mycert( c->msh, (char *)str_file, (int)size_file ) )
+                    // CPCSP-14527 better diagnostic flow
+                    if( certtype == 0 )
+                    {
+                        MSSPI_CERT_HANDLE ch = msspi_cert_open( (char *)str_file, (int)size_file );
+                        if( ch )
+                        {
+                            is_cert_file = 1;
+                            msspi_cert_close( ch );
+                        }
+                    }
+                    else
+                    if( certtype == 3 )
+                    {
+                        is_cert_file = 1;
+                    }
+
+                    if( is_cert_file && msspi_add_mycert( c->msh, (char *)str_file, (int)size_file ) )
                     {
                         certtype = 3;
                         *pcerttype = certtype;
                         is_ok = 1;
+                        break;
+                    }
+                    if( is_cert_file )
+                    {
+                        errstr = "not found in certstore";
                         break;
                     }
                     if( pin && ( certtype == 0 || certtype == 4 ) && msspi_add_mycert_pfx( c->msh, (char *)str_file, (int)size_file, pin ) )
@@ -946,7 +974,7 @@ NOEXPORT void ssl_start(CLI *c) {
                         is_pfx = 1;
                         break;
                     }
-                    errstr = "bad file format";
+                    errstr = "not cert or pfx";
                     break;
                 }
 
