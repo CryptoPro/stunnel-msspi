@@ -1090,6 +1090,23 @@ NOEXPORT void ssl_start(CLI *c) {
             }
             continue; /* ok -> retry */
         }
+#ifdef MSSPISSL
+        if( c->msh && err == SSL_ERROR_SYSCALL )
+        {
+            DWORD dwLastError = msspi_last_error();
+            s_log( LOG_ERR, "msspi: %s error = 0x%08X", c->opt->option.client ? "connect" : "accept", dwLastError );
+            switch( dwLastError )
+            {
+                case 0x80090307L: /* SEC_E_CANNOT_INSTALL */
+                    s_log( LOG_ERR, "msspi: CryptoPro TLS server license not found" );
+                    break;
+                default:
+                    break;
+            }
+
+            throw_exception( c, 1 );
+        }
+#endif
         if(err==SSL_ERROR_SYSCALL) {
             switch(get_last_socket_error()) {
             case S_EINTR:
