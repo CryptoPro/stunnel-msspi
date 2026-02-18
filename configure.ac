@@ -317,7 +317,7 @@ AC_ARG_ENABLE(msspi,
                  AC_DEFINE([MSSPI_USE_MSSPI_CERT], [1],
                     [Define to 1 to enable MSSPI certificate parsing])
 
-                 LIBS="-L./msspi/build_linux -lmsspi $LIBS -lstdc++ -ldl"
+                 LIBS="-L./msspi/build_linux -lmsspi-cert $LIBS -lstdc++ -ldl"
                  case "$host_cpu" in
                     arm*) LIBS="$LIBS -L/opt/cprocsp/lib/arm"
                            ;;
