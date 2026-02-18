@@ -314,6 +314,8 @@ AC_ARG_ENABLE(msspi,
             yes) AC_MSG_RESULT([yes])
                  AC_DEFINE([USE_MSSPI], [1],
                     [Define to 1 to enable MSSPI support])
+                 AC_DEFINE([MSSPI_USE_MSSPI_CERT], [1],
+                    [Define to 1 to enable MSSPI certificate parsing])
 
                  LIBS="-L./msspi/build_linux -lmsspi $LIBS -lstdc++ -ldl"
                  case "$host_cpu" in
