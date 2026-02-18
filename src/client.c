@@ -76,7 +76,7 @@ int FIPS_mode() { return 0; }
 #ifdef NO_OPENSSLOFF
 #else /* NO_OPENSSLOFF */
 void sslerror( const char * str ) { s_log( LOG_ERR, "%s", str ); }
-int RAND_bytes( unsigned char * buf, int num ) { return msspi_random( buf, num, 0 ); }
+int RAND_bytes( unsigned char * buf, int num ) { return msspi_random( buf, num ); }
 #define SSL_set_fd( s, fd ) c->rfd = c->wfd = fd
 #define SSL_set_rfd( s, fd ) c->rfd = fd
 #define SSL_set_wfd( s, fd ) c->wfd = fd
@@ -115,6 +115,14 @@ int SSL_get_shutdown_msspi( MSSPI_HANDLE h )
     if( err & MSSPI_RECEIVED_SHUTDOWN )
         return SSL_RECEIVED_SHUTDOWN;
     return 0;
+}
+
+const char * SSL_get_version_msspi( MSSPI_HANDLE h )
+{
+    const uint8_t * version_string = NULL;
+    size_t version_string_len = 0;
+    msspi_get_version( h, NULL, &version_string, &version_string_len );
+    return (const char *)version_string;
 }
 
 int BIO_sock_non_fatal_error( int err )
@@ -851,16 +859,16 @@ NOEXPORT void ssl_start(CLI *c) {
         msspi_set_version( c->msh, c->opt->min_proto_version, c->opt->max_proto_version );
 
         if( c->opt->sni )
-            msspi_set_hostname( c->msh, c->opt->sni );
+            msspi_set_hostname( c->msh, (const uint8_t *)c->opt->sni, strlen( c->opt->sni ) );
 
         if( c->opt->option.request_cert )
             msspi_set_peerauth( c->msh, 1 );
 
         if( c->opt->option.client )
-            msspi_set_client( c->msh );
+            msspi_set_client( c->msh, 1 );
 
         if( c->opt->cipher_list )
-            msspi_set_cipherlist( c->msh, c->opt->cipher_list );
+            msspi_set_cipherlist( c->msh, (const uint8_t *)c->opt->cipher_list, strlen( c->opt->cipher_list ) );
 
         for( j = 0; j < 2; j++ )
         {
@@ -882,13 +890,13 @@ NOEXPORT void ssl_start(CLI *c) {
             {
                 is_ok = 1;
             }
-            else if( ( certtype == 0 || certtype == 1 ) && msspi_add_mycert( c->msh, cert, 0 ) )
+            else if( ( certtype == 0 || certtype == 1 ) && msspi_add_mycert( c->msh, (const uint8_t *)cert, strlen( cert ) ) )
             {
                 certtype = 1;
                 *pcerttype = certtype;
                 is_ok = 1;
             }
-            else if( pin && ( certtype == 0 || certtype == 2 ) && msspi_add_mycert_pfx( c->msh, cert, strlen( cert ), pin ) )
+            else if( pin && ( certtype == 0 || certtype == 2 ) && msspi_add_mycert_pfx( c->msh, (const uint8_t *)cert, strlen( cert ), (const uint8_t *)pin, strlen( pin ) ) )
             {
                 certtype = 2;
                 *pcerttype = certtype;
@@ -941,7 +949,7 @@ NOEXPORT void ssl_start(CLI *c) {
                     // CPCSP-14527 better diagnostic flow
                     if( certtype == 0 )
                     {
-                        MSSPI_CERT_HANDLE ch = msspi_cert_open( (char *)str_file, (int)size_file );
+                        MSSPI_CERT_HANDLE ch = msspi_cert_open( (const uint8_t *)str_file, (size_t)size_file );
                         if( ch )
                         {
                             is_cert_file = 1;
@@ -954,7 +962,7 @@ NOEXPORT void ssl_start(CLI *c) {
                         is_cert_file = 1;
                     }
 
-                    if( is_cert_file && msspi_add_mycert( c->msh, (char *)str_file, (int)size_file ) )
+                    if( is_cert_file && msspi_add_mycert( c->msh, (const uint8_t *)str_file, (size_t)size_file ) )
                     {
                         certtype = 3;
                         *pcerttype = certtype;
@@ -966,7 +974,7 @@ NOEXPORT void ssl_start(CLI *c) {
                         errstr = "not found in certstore";
                         break;
                     }
-                    if( pin && ( certtype == 0 || certtype == 4 ) && msspi_add_mycert_pfx( c->msh, (char *)str_file, (int)size_file, pin ) )
+                    if( pin && ( certtype == 0 || certtype == 4 ) && msspi_add_mycert_pfx( c->msh, (const uint8_t *)str_file, (size_t)size_file, (const uint8_t *)pin, strlen( pin ) ) )
                     {
                         certtype = 4;
                         *pcerttype = certtype;
@@ -987,7 +995,7 @@ NOEXPORT void ssl_start(CLI *c) {
                 }
             }
 
-            if( cert && !is_pfx && !msspi_set_mycert_options( c->msh, 1, pin, 1 ) )
+            if( cert && !is_pfx && !msspi_set_mycert_options( c->msh, 1, (const uint8_t *)pin, pin ? strlen( pin ) : 0, 1 ) )
             {
                 s_log( LOG_ERR, "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\")", cert, pin ? pin : "" );
                 throw_exception( c, 1 );
@@ -996,8 +1004,8 @@ NOEXPORT void ssl_start(CLI *c) {
 #ifdef MAPOIDSSL
         if( c->opt->mapoid )
         {
-            const char * cert = NULL;
-            int len = 0;
+            const uint8_t * cert = NULL;
+            size_t len = 0;
 
             if( !msspi_get_mycert( c->msh, &cert, &len ) )
             {
@@ -1005,7 +1013,7 @@ NOEXPORT void ssl_start(CLI *c) {
                 throw_exception( c, 1 );
             }
 
-            if( NULL == ( c->moid = mapoid_open() ) || !mapoid_set_myoid( c->moid, cert, len ) )
+            if( NULL == ( c->moid = mapoid_open() ) || !mapoid_set_myoid( c->moid, (const char *)cert, len ) )
             {
                 s_log( LOG_ERR, "mapoid: mapoid_set_myoid failed (cert = \"%s\")", c->opt->cert );
                 throw_exception( c, 1 );
@@ -1127,7 +1135,8 @@ NOEXPORT void ssl_start(CLI *c) {
     {
         if( c->opt->log_level >= LOG_INFO )
         {
-            PSecPkgContext_CipherInfo cipherinfo = msspi_get_cipherinfo( c->msh );
+            const SecPkgContext_CipherInfo * cipherinfo = NULL;
+            msspi_get_cipherinfo( c->msh, &cipherinfo );
 
             if( !cipherinfo )
             {
@@ -1135,7 +1144,7 @@ NOEXPORT void ssl_start(CLI *c) {
                 throw_exception( c, 1 );
             }
 
-            s_log( LOG_INFO, "msspi: %s %s (%04X)", msspi_get_version( c->msh ),
+            s_log( LOG_INFO, "msspi: %s %s (%04X)", SSL_get_version_msspi( c->msh ),
                    c->opt->option.client ? "connected" : "accepted",
                    cipherinfo->dwCipherSuite );
         }
@@ -1154,9 +1163,11 @@ NOEXPORT void ssl_start(CLI *c) {
         {
             int level = LOG_ERR;
             const char * errinfo = "failed (MSSPI_VERIFY_ERROR)";
-            switch( msspi_verify( c->msh ) )
+            uint32_t verify_status = (uint32_t)-1;
+            msspi_get_verify_status( c->msh, &verify_status );
+            switch( verify_status )
             {
-            case MSSPI_VERIFY_OK:
+            case 0:
                 level = LOG_INFO;
                 errinfo = "OK";
                 break;
@@ -1167,12 +1178,13 @@ NOEXPORT void ssl_start(CLI *c) {
                     NAME_LIST * ptr;
                     for( ptr = c->opt->check_host; ptr; ptr = ptr->next )
                     {
-                        msspi_set_hostname( c->msh, ptr->name );
-                        if( msspi_verify( c->msh ) == MSSPI_VERIFY_OK )
+                        msspi_set_hostname( c->msh, (const uint8_t *)ptr->name, strlen( ptr->name ) );
+                        msspi_get_verify_status( c->msh, &verify_status );
+                        if( verify_status == 0 )
                             break;
                     }
 
-                    msspi_set_hostname( c->msh, c->opt->sni );
+                    msspi_set_hostname( c->msh, (const uint8_t *)c->opt->sni, strlen( c->opt->sni ) );
 
                     if( ptr )
                     {
@@ -1196,7 +1208,9 @@ NOEXPORT void ssl_start(CLI *c) {
 
         if( c->opt->option.verify_peer )
         {
-            if( !msspi_verifypeer( c->msh, c->opt->ca_dir ) )
+            uint32_t verify_peer_status = (uint32_t)-1;
+            msspi_get_peercert_in_store_status( c->msh, (const uint8_t *)c->opt->ca_dir, strlen( c->opt->ca_dir ), &verify_peer_status );
+            if( verify_peer_status )
             {
                 s_log( LOG_ERR, "msspi: verifypeer failed (CApath = \"%s\")", c->opt->ca_dir );
                 throw_exception( c, 1 );
@@ -1208,17 +1222,17 @@ NOEXPORT void ssl_start(CLI *c) {
 #ifdef MAPOIDSSL
         if( c->opt->mapoid )
         {
-            const char * certs[64] = { NULL };
-            int lens[64] = { 0 };
+            const uint8_t * certs[64] = { NULL };
+            size_t lens[64] = { 0 };
             size_t count = 64;
 
-            if( !msspi_get_peercerts( c->msh, (const char **)&certs, (int *)&lens, &count ) || count == 0 )
+            if( !msspi_get_peercerts( c->msh, (const uint8_t **)&certs, (size_t *)&lens, &count ) || count == 0 )
             {
                 s_log( LOG_ERR, "mapoid: msspi_get_peercerts failed" );
                 throw_exception( c, 1 );
             }
 
-            if( !mapoid_verifypeer( c->moid, certs[0], lens[0] ) )
+            if( !mapoid_verifypeer( c->moid, (const char *)certs[0], lens[0] ) )
             {
                 s_log( LOG_ERR, "mapoid: mapoid_verifypeer failed" );
                 throw_exception( c, 1 );
@@ -1231,7 +1245,7 @@ NOEXPORT void ssl_start(CLI *c) {
         if( c->opt->checkSubject )
         {
             NAME_LIST * ptr;
-            const char * subject;
+            const uint8_t * subject;
             size_t len;
             if( !msspi_get_peernames( c->msh, &subject, &len, NULL, NULL ) )
             {
@@ -1245,7 +1259,7 @@ NOEXPORT void ssl_start(CLI *c) {
 
             if( !ptr )
             {
-                s_log( LOG_ERR, "msspi: checkSubject failed (subject = \"%s\")", subject );
+                s_log( LOG_ERR, "msspi: checkSubject failed (subject = \"%s\")", (const char *)subject );
                 throw_exception( c, 1 );
             }
 
@@ -1255,7 +1269,7 @@ NOEXPORT void ssl_start(CLI *c) {
         if( c->opt->checkIssuer )
         {
             NAME_LIST * ptr;
-            const char * issuer;
+            const uint8_t * issuer;
             size_t len;
             if( !msspi_get_peernames( c->msh, NULL, NULL, &issuer, &len ) )
             {
@@ -1269,7 +1283,7 @@ NOEXPORT void ssl_start(CLI *c) {
 
             if( !ptr )
             {
-                s_log( LOG_ERR, "msspi: checkIssuer failed (issuer = \"%s\")", issuer );
+                s_log( LOG_ERR, "msspi: checkIssuer failed (issuer = \"%s\")", (const char *)issuer );
                 throw_exception( c, 1 );
             }
 
@@ -2046,16 +2060,16 @@ char **env_alloc( CLI *c )
 
     if( c->msh )
     {
-        const char * subject;
+        const uint8_t * subject;
         size_t slen;
-        const char * issuer;
+        const uint8_t * issuer;
         size_t ilen;
         if( msspi_get_peernames( c->msh, &subject, &slen, &issuer, &ilen ) )
         {
             env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
-            env[n++] = str_printf( "SSL_CLIENT_DN=%s", subject );
+            env[n++] = str_printf( "SSL_CLIENT_DN=%s", (const char *)subject );
             env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
-            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", issuer );
+            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", (const char *)issuer );
         }
     }
 
@@ -2279,16 +2293,16 @@ char **env_alloc(CLI *c) {
 
     if( c->msh )
     {
-        const char * subject;
+        const uint8_t * subject;
         size_t slen;
-        const char * issuer;
+        const uint8_t * issuer;
         size_t ilen;
         if( msspi_get_peernames( c->msh, &subject, &slen, &issuer, &ilen ) )
         {
             env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
-            env[n++] = str_printf( "SSL_CLIENT_DN=%s", subject );
+            env[n++] = str_printf( "SSL_CLIENT_DN=%s", (const char *)subject );
             env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
-            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", issuer );
+            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", (const char *)issuer );
         }
     }
 

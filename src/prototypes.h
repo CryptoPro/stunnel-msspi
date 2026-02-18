@@ -530,8 +530,8 @@ struct client_data_struct {
 #ifdef MAPOIDSSL
     MAPOID_HANDLE moid;
 #endif /* MAPOIDSSL */
-    int rfd;
-    int wfd;
+    SOCKET rfd;
+    SOCKET wfd;
 #endif
     jmp_buf *exception_pointer;
 
@@ -1041,8 +1041,9 @@ int SSL_get_shutdown_msspi( MSSPI_HANDLE h );
 #define SSL_get_shutdown( s ) ( c->msh ? SSL_get_shutdown_msspi( c->msh ) : SSL_get_shutdown_prx( s ) )
 
 const char * SSL_get_version_prx( const SSL * s );
+const char * SSL_get_version_msspi( MSSPI_HANDLE h );
 #undef SSL_get_version
-#define SSL_get_version( s ) ( c->msh ? msspi_get_version( c->msh ) : SSL_get_version_prx( s ) )
+#define SSL_get_version( s ) ( c->msh ? SSL_get_version_msspi( c->msh ) : SSL_get_version_prx( s ) )
 
 int SSL_version_prx( const SSL * s );
 #undef SSL_version

@@ -80,7 +80,7 @@ MAPOID_HANDLE mapoid_open()
     MSSPIEHCATCH_RET( NULL );
 }
 
-char mapoid_set_myoid( MAPOID_HANDLE h, const char * buf, int len )
+char mapoid_set_myoid( MAPOID_HANDLE h, const char * buf, size_t len )
 {
     MSSPIEHTRY;
 
@@ -133,7 +133,7 @@ char mapoid_selfcheck( MAPOID_HANDLE h, char is_client )
     MSSPIEHCATCH_RET( 0 );
 }
 
-char mapoid_verifypeer( MAPOID_HANDLE h, const char * cert, int len )
+char mapoid_verifypeer( MAPOID_HANDLE h, const char * cert, size_t len )
 {
     MSSPIEHTRY;
 
