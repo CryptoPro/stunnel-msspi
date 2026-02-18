@@ -1832,37 +1832,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             break;
     }
 
-#ifdef MAPOIDSSL
-    /* mapoid */
-    switch( cmd )
-    {
-        case CMD_SET_DEFAULTS:
-            section->mapoid = NULL;
-            break;
-        case CMD_SET_VALUE:
-            if( strcasecmp( opt, "mapoid" ) )
-                break;
-            if( arg[0] )
-                section->mapoid = str_dup_detached( arg );
-            else
-                return "The mapoid is empty";
-            return NULL; /* OK */
-        case CMD_SET_COPY:
-            section->mapoid = str_dup_detached( new_service_options.mapoid );
-            break;
-        case CMD_FREE:
-            str_free( section->mapoid );
-            break;
-        case CMD_INITIALIZE:
-            break;
-        case CMD_PRINT_DEFAULTS:
-            break;
-        case CMD_PRINT_HELP:
-            s_log( LOG_NOTICE, "%-22s = mapoid", "mapoid" );
-            break;
-    }
-#endif /* MAPOIDSSL */
-
     /* pin2 */
     switch( cmd )
     {

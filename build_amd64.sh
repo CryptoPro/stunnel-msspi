@@ -9,10 +9,7 @@ if [ "$MSSPI" = "yes" ]; then
     sudo ./install.sh $CSPMODE || exit 1
     cd ../src/msspi/build_linux
     make || exit 1
-    cd ../../..
-    cd src/mapoid
-    make || exit 1
-    cd ../..;
+    cd ../../..;
 fi
 
 autoreconf -fvi && touch src/dhparam.c

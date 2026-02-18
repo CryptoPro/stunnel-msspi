@@ -594,13 +594,6 @@ NOEXPORT void client_run(CLI *c) {
         c->exec_fd = INVALID_SOCKET;
     }
 
-#ifdef MAPOIDSSL
-    if( c->moid )
-    {
-        mapoid_close( c->moid );
-        c->moid = NULL;
-    }
-#endif /* MAPOIDSSL */
 #endif /* MSSPISSL */
 #endif /* NO_OPENSSLOFF */
 
@@ -1024,39 +1017,6 @@ NOEXPORT void ssl_start(CLI *c) {
                 throw_exception( c, 1 );
             }
         }
-#ifdef MAPOIDSSL
-        if( c->opt->mapoid )
-        {
-            const uint8_t * cert = NULL;
-            size_t len = 0;
-
-            if( !msspi_get_mycert( c->msh, &cert, &len ) )
-            {
-                s_log( LOG_ERR, "mapoid: msspi_get_mycert failed (cert = \"%s\")", c->opt->cert );
-                throw_exception( c, 1 );
-            }
-
-            if( NULL == ( c->moid = mapoid_open() ) || !mapoid_set_myoid( c->moid, (const char *)cert, len ) )
-            {
-                s_log( LOG_ERR, "mapoid: mapoid_set_myoid failed (cert = \"%s\")", c->opt->cert );
-                throw_exception( c, 1 );
-            }
-
-            if( !mapoid_set_mapoid( c->moid, c->opt->mapoid ) )
-            {
-                s_log( LOG_ERR, "mapoid: mapoid_set_mapoid failed (cert = \"%s\")", c->opt->cert );
-                throw_exception( c, 1 );
-            }
-
-            if( !mapoid_selfcheck( c->moid, (char)c->opt->option.client ) )
-            {
-                s_log( LOG_ERR, "mapoid: mapoid_selfcheck failed (cert = \"%s\")", c->opt->cert );
-                throw_exception( c, 1 );
-            }
-
-            s_log( LOG_INFO, "mapoid: selfcheck OK" );
-        }
-#endif /* MAPOIDSSL */
     }
 #endif /* MSSPISSL */
 
@@ -1241,29 +1201,6 @@ NOEXPORT void ssl_start(CLI *c) {
 
             s_log( LOG_INFO, "msspi: verifypeer OK" );
         }
-
-#ifdef MAPOIDSSL
-        if( c->opt->mapoid )
-        {
-            const uint8_t * certs[64] = { NULL };
-            size_t lens[64] = { 0 };
-            size_t count = 64;
-
-            if( !msspi_get_peercerts( c->msh, (const uint8_t **)&certs, (size_t *)&lens, &count ) || count == 0 )
-            {
-                s_log( LOG_ERR, "mapoid: msspi_get_peercerts failed" );
-                throw_exception( c, 1 );
-            }
-
-            if( !mapoid_verifypeer( c->moid, (const char *)certs[0], lens[0] ) )
-            {
-                s_log( LOG_ERR, "mapoid: mapoid_verifypeer failed" );
-                throw_exception( c, 1 );
-            }
-
-            s_log( LOG_INFO, "mapoid: verifypeer OK" );
-        }
-#endif /* MAPOIDSSL */
 
         if( c->opt->checkSubject )
         {

@@ -42,14 +42,10 @@
 
 #ifdef USE_MSSPI
 #define MSSPISSL
-#define MAPOIDSSL
 #endif
 
 #ifdef MSSPISSL
 #include "msspi/src/msspi.h"
-#ifdef MAPOIDSSL
-#include "mapoid/mapoid.h"
-#endif
 #endif
 
 #if defined(USE_PTHREAD) || defined(USE_WIN32)
@@ -329,9 +325,6 @@ struct service_options_struct {
     char *key;                               /* pem (priv key/cert) filename */
 #ifdef MSSPISSL
     char *pin;                                     /* pin-code for msspi key */
-#ifdef MAPOIDSSL
-    char *mapoid;                                 /* mapoid json map of oids */
-#endif
     char *cert2;                                   /* second cert (fallback) */
     char *pin2;                                  /* pin-code for second cert */
     NAME_LIST * checkSubject;                         /* strcmp cert subject */
@@ -527,9 +520,6 @@ typedef enum {
 struct client_data_struct {
 #ifdef MSSPISSL
     MSSPI_HANDLE msh;
-#ifdef MAPOIDSSL
-    MAPOID_HANDLE moid;
-#endif /* MAPOIDSSL */
     SOCKET rfd;
     SOCKET wfd;
 #endif
@@ -1025,7 +1015,7 @@ int SSL_read_prx( SSL * s, void * buf, int num );
 
 void SSL_free_prx( SSL * s );
 #undef SSL_free
-#define SSL_free( s ) { SSL_free_prx( s ); if( c->msh ){ msspi_close( c->msh ); c->msh = NULL; } if( c->moid ){ mapoid_close( c->moid ); c->moid = NULL; } }
+#define SSL_free( s ) { SSL_free_prx( s ); if( c->msh ){ msspi_close( c->msh ); c->msh = NULL; } }
 
 int SSL_shutdown_prx( SSL * s );
 #undef SSL_shutdown
