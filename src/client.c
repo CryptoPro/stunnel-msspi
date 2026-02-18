@@ -76,7 +76,30 @@ int FIPS_mode() { return 0; }
 #ifdef NO_OPENSSLOFF
 #else /* NO_OPENSSLOFF */
 void sslerror( const char * str ) { s_log( LOG_ERR, "%s", str ); }
-int RAND_bytes( unsigned char * buf, int num ) { return msspi_random( buf, num ); }
+int RAND_bytes( unsigned char * buf, int num )
+{
+#ifdef USE_WIN32
+    return msspi_random( buf, num );
+#else
+    static int urandom_fd = -1;
+    if( urandom_fd < 0 )
+        urandom_fd = open( "/dev/urandom", O_RDONLY | O_CLOEXEC );
+    if( urandom_fd >= 0 )
+    {
+        ssize_t n = 0;
+        while( n < num )
+        {
+            ssize_t r = read( urandom_fd, buf + n, num - n );
+            if( r <= 0 )
+                break;
+            n += r;
+        }
+        if( n == num )
+            return 1;
+    }
+    return 0;
+#endif
+}
 #define SSL_set_fd( s, fd ) c->rfd = c->wfd = fd
 #define SSL_set_rfd( s, fd ) c->rfd = fd
 #define SSL_set_wfd( s, fd ) c->wfd = fd
