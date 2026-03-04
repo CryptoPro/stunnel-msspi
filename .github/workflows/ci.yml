@@ -1,0 +1,81 @@
+name: ci
+on: [push]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+#       build-os: [ amd64-ubuntu, amd64-centos, armv7-raspbian, aarch64-ubuntu ]
+        build-os: [ amd64-ubuntu, amd64-centos ]
+        include:
+        - os: ubuntu-latest
+          platform: linux
+    env:
+      BUILD_OS: ${{ matrix.build-os }}
+
+    name: CI
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup
+      shell: bash
+      run: |
+        git submodule update --init --recursive --depth 1
+        sudo apt update && sudo apt install -y autoconf-archive libssl-dev libwrap0-dev
+
+    - name: Download CryptoPro CSP
+      env:
+        CPRO_CREDENTIALS: ${{ secrets.CPRO_CREDENTIALS }}
+      shell: bash
+      run: |
+        if [ "$BUILD_OS" == "amd64-ubuntu" ]; then
+          curl https://${CPRO_CREDENTIALS}@update.cryptopro.ru/support/stunnel/dist/csp50r2/linux-amd64_deb.tgz --output linux-amd64_deb.tgz
+          tar -xvf linux-amd64_deb.tgz
+        elif [ "$BUILD_OS" == "amd64-centos" ]; then
+          curl https://${CPRO_CREDENTIALS}@update.cryptopro.ru/support/stunnel/dist/csp50r2/linux-amd64.tgz --output linux-amd64.tgz
+          tar -xvf linux-amd64.tgz
+        elif [ "$BUILD_OS" == "armv7-raspbian" ]; then
+          curl https://${CPRO_CREDENTIALS}@update.cryptopro.ru/support/stunnel/dist/csp50r2/linux-armhf_deb.tgz --output linux-armhf_deb.tgz
+          tar -xvf linux-armhf_deb.tgz
+        elif [ "$BUILD_OS" == "aarch64-ubuntu" ]; then
+          curl https://${CPRO_CREDENTIALS}@update.cryptopro.ru/support/stunnel/dist/csp50r2/linux-arm64_deb.tgz --output linux-arm64_deb.tgz
+          tar -xvf linux-arm64_deb.tgz
+        else
+          exit 1
+        fi
+
+    - name: Build
+      id: build
+      env:
+        MSSPI: yes
+        CONFIGURE_OPTIONS: --with-threads=pthread --enable-msspi
+        CSPMODE: kc1
+      run: |
+        if [ "$BUILD_OS" == "amd64-ubuntu" ]; then
+          export ARCH='amd64'
+          export ARCH_DIST='linux-amd64'
+          bash -ex ./build_amd64.sh
+        elif [ "$BUILD_OS" == "amd64-centos" ]; then
+          export ARCH='amd64'
+          export ARCH_DIST='linux-amd64'
+          bash -ex ./build_amd64_centos.sh
+        elif [ "$BUILD_OS" == "armv7-raspbian" ]; then
+          export ARCH='armv7'
+          export ARCH_DIST='linux-armhf'
+          bash -ex ./build_armv7.sh
+        elif [ "$BUILD_OS" == "aarch64-ubuntu" ]; then
+          export ARCH='aarch64'
+          export ARCH_DIST='linux-arm64'
+          bash -ex ./build_arm64.sh
+        else
+          exit 1
+        fi
+        echo ::set-output name=VERSION::${GITHUB_REF#refs/*/}-${BUILD_OS}
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: src/${{ steps.build.outputs.VERSION }}.tar.gz

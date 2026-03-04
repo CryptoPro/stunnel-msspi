@@ -40,6 +40,14 @@
 
 #include "common.h"
 
+#ifdef USE_MSSPI
+#define MSSPISSL
+#endif
+
+#ifdef MSSPISSL
+#include "msspi/src/msspi.h"
+#endif
+
 #if defined(USE_PTHREAD) || defined(USE_WIN32)
 #define USE_OS_THREADS
 #endif
@@ -72,7 +80,13 @@ typedef struct servername_list_struct SERVERNAME_LIST;
     typedef HANDLE THREAD_ID;
 #endif
 
-#if OPENSSL_VERSION_NUMBER<0x10100004L
+#ifdef NO_OPENSSLOFF
+#define NO_OPENSSL_LOCKS OPENSSL_VERSION_NUMBER<0x10100004L
+#else /* NO_OPENSSLOFF */
+#define NO_OPENSSL_LOCKS 1
+#endif /* NO_OPENSSLOFF */
+
+#if NO_OPENSSL_LOCKS
 
 #ifdef USE_OS_THREADS
 
@@ -90,7 +104,8 @@ struct CRYPTO_dynlock_value {
 #endif
 };
 
-typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK;
+typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK_stunnel;
+typedef void CRYPTO_RWLOCK;
 
 #else /* USE_OS_THREADS */
 
@@ -311,6 +326,15 @@ struct service_options_struct {
 #endif /* TLS 1.3 */
     NAME_LIST *cert;    /* list of certificate identifiers (URI or filename) */
     char *key;                               /* pem (priv key/cert) filename */
+#ifdef MSSPISSL
+    char *pin;                                     /* pin-code for msspi key */
+    char *cert2;                                   /* second cert (fallback) */
+    char *pin2;                                  /* pin-code for second cert */
+    NAME_LIST * checkSubject;                         /* strcmp cert subject */
+    NAME_LIST * checkIssuer;                           /* strcmp cert issuer */
+    char certtype;                                     /* cert type detector */
+    char certtype2;                                   /* cert2 type detector */
+#endif
     long session_size, session_timeout;
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
     int security_level;
@@ -390,6 +414,9 @@ struct service_options_struct {
 
         /* on/off switches */
     struct {
+#ifdef MSSPISSL
+        unsigned msspi:1;               /* use msspi */
+#endif
         unsigned request_cert:1;        /* request a peer certificate */
         unsigned require_cert:1;        /* require a client certificate */
         unsigned verify_chain:1;        /* verify certificate chain */
@@ -506,6 +533,11 @@ typedef enum {
 } RENEG_STATE;
 
 struct client_data_struct {
+#ifdef MSSPISSL
+    MSSPI_HANDLE msh;
+    SOCKET rfd;
+    SOCKET wfd;
+#endif
     jmp_buf *exception_pointer;
 
     SSL *ssl;                                              /* TLS connection */
@@ -521,6 +553,12 @@ struct client_data_struct {
 
     SOCKADDR_UNION peer_addr;                                /* peer address */
     socklen_t peer_addr_len;
+#ifdef MSSPISSL
+    SOCKADDR_UNION local_addr;                              /* local address */
+    socklen_t local_addr_len;
+    SOCKET exec_fd;
+    int is_exec;
+#endif
     char *accepted_address;    /* textual representation of the peer address */
     SOCKADDR_UNION *bind_addr;               /* address to bind() the socket */
     SOCKADDR_LIST connect_addr;     /* either copied or resolved dynamically */
@@ -627,7 +665,9 @@ int pty_allocate(int *, int *, char *);
 
 /**************************************** prototypes for dhparam.c */
 
+#ifndef OPENSSL_NO_DH
 DH *get_dh2048(void);
+#endif /* OPENSSL_NO_DH */
 
 /**************************************** prototypes for cron.c */
 
@@ -820,9 +860,9 @@ int getnameinfo(const struct sockaddr *, socklen_t,
 extern CLI *thread_head;
 #endif
 
-extern CRYPTO_RWLOCK *stunnel_locks[STUNNEL_LOCKS];
+extern CRYPTO_RWLOCK_stunnel *stunnel_locks[STUNNEL_LOCKS];
 
-#if OPENSSL_VERSION_NUMBER<0x10100004L
+#if NO_OPENSSL_LOCKS
 /* Emulate the OpenSSL 1.1 locking API for older OpenSSL versions */
 CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void);
 int CRYPTO_THREAD_read_lock(CRYPTO_RWLOCK *);
@@ -830,7 +870,7 @@ int CRYPTO_THREAD_write_lock(CRYPTO_RWLOCK *);
 int CRYPTO_THREAD_unlock(CRYPTO_RWLOCK *);
 void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *);
 int CRYPTO_atomic_add(int *, int, int *, CRYPTO_RWLOCK *);
-#endif
+#endif /* NO_OPENSSL_LOCKS */
 
 int sthreads_init(void);
 unsigned long stunnel_process_id(void);
@@ -977,6 +1017,61 @@ int (*ui_get_closer(void)) (UI *);
 ICON_IMAGE load_icon_default(ICON_TYPE);
 ICON_IMAGE load_icon_file(const char *);
 #endif
+
+#ifdef MSSPISSL
+int SSL_connect_prx( SSL * s );
+#undef SSL_connect
+#define SSL_connect( s ) ( c->msh ? msspi_connect( c->msh ) : SSL_connect_prx( s ) )
+
+int SSL_accept_prx( SSL * s );
+#undef SSL_accept
+#define SSL_accept( s ) ( c->msh ? msspi_accept( c->msh ) : SSL_accept_prx( s ) )
+
+int SSL_write_prx( SSL * s, const void * buf, int num );
+#undef SSL_write
+#define SSL_write( s, b, n ) ( c->msh ? msspi_write( c->msh, b, n ) : SSL_write_prx( s, b, n ) )
+
+int SSL_read_prx( SSL * s, void * buf, int num );
+#undef SSL_read
+#define SSL_read( s, b, n ) ( c->msh ? msspi_read( c->msh, b, n ) : SSL_read_prx( s, b, n ) )
+
+void SSL_free_prx( SSL * s );
+#undef SSL_free
+#define SSL_free( s ) { SSL_free_prx( s ); if( c->msh ){ msspi_close( c->msh ); c->msh = NULL; } }
+
+int SSL_shutdown_prx( SSL * s );
+#undef SSL_shutdown
+#define SSL_shutdown( s ) ( c->msh ? msspi_shutdown( c->msh ) : SSL_shutdown_prx( s ) )
+
+void SSL_set_shutdown_prx( SSL * s, int mode );
+#undef SSL_set_shutdown
+#define SSL_set_shutdown( s, m ) { if( c->msh ){ if( (m) & SSL_SENT_SHUTDOWN ) msspi_shutdown( c->msh ); } else SSL_set_shutdown_prx( s, m ); }
+
+int SSL_get_shutdown_prx( const SSL * s );
+int SSL_get_shutdown_msspi( MSSPI_HANDLE h );
+#undef SSL_get_shutdown
+#define SSL_get_shutdown( s ) ( c->msh ? SSL_get_shutdown_msspi( c->msh ) : SSL_get_shutdown_prx( s ) )
+
+const char * SSL_get_version_prx( const SSL * s );
+const char * SSL_get_version_msspi( MSSPI_HANDLE h );
+#undef SSL_get_version
+#define SSL_get_version( s ) ( c->msh ? SSL_get_version_msspi( c->msh ) : SSL_get_version_prx( s ) )
+
+int SSL_version_prx( const SSL * s );
+#undef SSL_version
+#define SSL_version( s ) ( c->msh ? TLS1_VERSION : SSL_version_prx( s ) )
+
+int SSL_pending_prx( const SSL * s );
+#undef SSL_pending
+#define SSL_pending( s ) ( c->msh ? msspi_pending( c->msh ) : SSL_pending_prx( s ) )
+
+int SSL_get_error_prx( const SSL *s, int ret_code );
+int SSL_get_error_msspi( MSSPI_HANDLE h, int ret );
+#undef SSL_get_error
+#define SSL_get_error( s, i ) ( c->msh ? SSL_get_error_msspi( c->msh, i ) : SSL_get_error_prx( s, i ) )
+
+#undef SSL_R_UNEXPECTED_EOF_WHILE_READING
+#endif /* MSSPISSL */
 
 #endif /* defined PROTOTYPES_H */
 

@@ -1476,9 +1476,11 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
     case CMD_SET_VALUE:
         return option_not_found;
     case CMD_INITIALIZE:
+#ifdef NO_OPENSSLOFF
         /* FIPS needs to be initialized as early as possible */
         if(ssl_configure(options)) /* configure global TLS settings */
             return "Failed to initialize TLS";
+#endif /* NO_OPENSSLOFF */
     case CMD_PRINT_DEFAULTS:
         break;
     case CMD_PRINT_HELP:
@@ -1874,6 +1876,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->cipher_list=str_dup_detached(arg);
         return NULL; /* OK */
     case CMD_INITIALIZE:
+#ifdef NO_OPENSSLOFF
         if(!section->cipher_list) {
             /* this is only executed for global options, because
              * section->cipher_list is no longer NULL in sections */
@@ -1884,6 +1887,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 #endif /* USE_FIPS */
                 section->cipher_list=str_dup_detached(stunnel_cipher_list);
         }
+#endif // NO_OPENSSLOFF
         break;
     case CMD_PRINT_DEFAULTS:
 #ifdef USE_FIPS
@@ -1936,6 +1940,188 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     }
 #endif /* TLS 1.3 */
+
+#ifdef MSSPISSL
+    /* msspi */
+    switch( cmd ) {
+    case CMD_SET_DEFAULTS:
+        section->option.msspi = 1;
+        break;
+    case CMD_SET_VALUE:
+        if( strcasecmp( opt, "msspi" ) )
+            break;
+        if( !strcasecmp( arg, "yes" ) )
+            section->option.msspi = 1;
+        else if( !strcasecmp( arg, "no" ) )
+            section->option.msspi = 0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_SET_COPY:
+        section->option.msspi = new_service_options.option.msspi;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+    	s_log(LOG_NOTICE, "%-22s = yes", "msspi" );
+        break;
+    case CMD_PRINT_HELP:
+        s_log( LOG_NOTICE, "%-22s = yes|no msspi mode", "msspi" );
+        break;
+    }
+
+    /* pin */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->pin = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "pin" ) &&
+                strcasecmp( opt, "pincode" ) )
+                break;
+            if( arg[0] )
+                section->pin = str_dup_detached( arg );
+            else
+                return "The pin is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->pin = str_dup_detached( new_service_options.pin );
+            break;
+        case CMD_FREE:
+            str_free( section->pin );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = pin", "pin" );
+            break;
+    }
+
+    /* pin2 */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->pin2 = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "pin2" ) )
+                break;
+            if( arg[0] )
+                section->pin2 = str_dup_detached( arg );
+            else
+                return "The pin2 is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->pin2 = str_dup_detached( new_service_options.pin2 );
+            break;
+        case CMD_FREE:
+            str_free( section->pin2 );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = pin2", "pin2" );
+            break;
+    }
+
+    /* cert2 */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->cert2 = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "cert2" ) )
+                break;
+            if( arg[0] )
+                section->cert2 = str_dup_detached( arg );
+            else
+                return "The cert is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->cert2 = str_dup_detached( new_service_options.cert2 );
+            break;
+        case CMD_FREE:
+            str_free( section->cert2 );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = cert2", "cert2" );
+            break;
+    }
+
+    /* checkSubject */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->checkSubject = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "checkSubject" ) )
+                break;
+            if( arg[0] )
+                name_list_append( &section->checkSubject, arg );
+            else
+                return "checkSubject is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            name_list_dup( &section->checkSubject, new_service_options.checkSubject );
+            break;
+        case CMD_FREE:
+            name_list_free( section->checkSubject );
+            break;
+        case CMD_INITIALIZE:
+            if( section->checkSubject && !section->option.verify_chain && !section->option.verify_peer )
+                return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = checkSubject", "checkSubject" );
+            break;
+    }
+
+    /* checkIssuer */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->checkIssuer = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "checkIssuer" ) )
+                break;
+            if( arg[0] )
+                name_list_append( &section->checkIssuer, arg );
+            else
+                return "checkIssuer is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            name_list_dup( &section->checkIssuer, new_service_options.checkIssuer );
+            break;
+        case CMD_FREE:
+            name_list_free( section->checkIssuer );
+            break;
+        case CMD_INITIALIZE:
+            if( section->checkIssuer && !section->option.verify_chain && !section->option.verify_peer )
+                return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = checkIssuer", "checkIssuer" );
+            break;
+    }
+#endif
 
     /* client */
     switch(cmd) {
@@ -3713,6 +3899,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 
 #else /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
+#ifdef NO_OPENSSLOFF
+
     /* sslVersion */
     switch(cmd) {
     case CMD_SET_DEFAULTS:
@@ -3746,6 +3934,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             " TLS method", "sslVersion");
         break;
     }
+
+#endif /* NO_OPENSSLOFF */
 
 #endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
@@ -3782,6 +3972,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 #endif
 
 #if OPENSSL_VERSION_NUMBER>=0x10000000L
+
+#ifdef NO_OPENSSLOFF
 
     /* ticketKeySecret */
     switch(cmd) {
@@ -3856,6 +4048,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             "ticketMacSecret");
         break;
     }
+
+#endif /* NO_OPENSSLOFF */
 
 #endif /* OpenSSL 1.0.0 or later */
 
@@ -4082,6 +4276,15 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         }
         return NULL; /* OK */
     case CMD_INITIALIZE:
+#ifdef MSSPISSL
+        if( section->option.msspi )
+        {
+            if( section->option.verify_peer && !section->ca_dir )
+                return "\"CApath\" has to be configured";
+        }
+        else
+#endif
+
 #ifndef OPENSSL_NO_ENGINE
         if((section->option.verify_chain || section->option.verify_peer) &&
                 !section->ca_engine && !section->ca_file && !section->ca_dir
@@ -4186,7 +4389,14 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_SET_COPY:
         break;
     case CMD_FREE:
+        str_free(section->chain);
+#ifdef NO_OPENSSLOFF
+        if(section->session)
+            SSL_SESSION_free(section->session);
+        if(section->ctx)
+            SSL_CTX_free(section->ctx);
         context_cleanup(section);
+#endif /* NO_OPENSSLOFF */
         str_free(section->servname);
         if(section==&service_options || section==&new_service_options)
             memset(section, 0, sizeof(SERVICE_OPTIONS));
@@ -4207,6 +4417,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             if(endpoints!=1)
                 return "Inetd mode must define one endpoint";
         }
+#ifdef NO_OPENSSLOFF
 #ifdef SSL_OP_NO_TICKET
         /* disable RFC4507 support introduced in OpenSSL 0.9.8f */
         /* OpenSSL 1.1.1 is required to serialize application data
@@ -4220,6 +4431,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 #endif /* SSL_OP_NO_TICKET */
         if(context_init(section)) /* initialize TLS context */
             return "Failed to initialize TLS context";
+#endif /* NO_OPENSSLOFF */
         break;
     case CMD_PRINT_DEFAULTS:
         break;
@@ -4339,6 +4551,8 @@ NOEXPORT int str_to_proto_version(const char *name) {
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif /* __GNUC__ */
 
+#ifdef NO_OPENSSLOFF
+
 NOEXPORT char *tls_methods_set(SERVICE_OPTIONS *section, const char *arg) {
     if(!arg) { /* defaults */
         section->client_method=(SSL_METHOD *)SSLv23_client_method();
@@ -4407,6 +4621,8 @@ NOEXPORT char *tls_methods_check(SERVICE_OPTIONS *section) {
 #endif /* USE_FIPS */
     return NULL;
 }
+
+#endif /* NO_OPENSSLOFF */
 
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
@@ -4511,6 +4727,8 @@ NOEXPORT void print_ssl_options(void) {
     for(option=ssl_opts; option->name; ++option)
         s_log(LOG_NOTICE, "options = %s", option->name);
 }
+
+#ifdef NO_OPENSSLOFF
 
 /**************************************** read PSK file */
 
@@ -4687,6 +4905,8 @@ NOEXPORT void key_free(TICKET_KEY *head) {
 }
 
 #endif /* OpenSSL 1.0.0 or later */
+
+#endif /* NO_OPENSSLOFF */
 
 /**************************************** socket options */
 
@@ -5297,13 +5517,16 @@ NOEXPORT void name_list_free(NAME_LIST *ptr) {
 }
 
 NOEXPORT void connect_session_free(SERVICE_OPTIONS *section) {
-    unsigned i;
-
     if(!section->connect_session)
         return;
-    for(i=0; i<section->connect_addr.num; i++)
-        if(section->connect_session[i])
-            SSL_SESSION_free(section->connect_session[i]);
+#ifdef NO_OPENSSLOFF
+    {
+        unsigned i;
+        for(i=0; i<section->connect_addr.num; i++)
+            if(section->connect_session[i])
+                SSL_SESSION_free(section->connect_session[i]);
+    }
+#endif /* NO_OPENSSLOFF */
     str_free(section->connect_session);
     section->connect_session=NULL;
 }

@@ -225,6 +225,7 @@ NOEXPORT LPTSTR str_vtprintf(LPCTSTR format, va_list start_ap) {
 
 void str_init(void) {
     memset(leak_hash_table, 0, sizeof leak_hash_table);
+#ifdef NO_OPENSSLOFF
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
     CRYPTO_set_mem_functions(str_alloc_detached_debug,
         str_realloc_detached_debug, str_free_debug);
@@ -232,6 +233,7 @@ void str_init(void) {
     CRYPTO_set_mem_ex_functions(str_alloc_detached_debug,
         str_realloc_detached_debug, free_function);
 #endif
+#endif /* NO_OPENSSLOFF */
 }
 
 void str_thread_init(TLS_DATA *tls_data) {

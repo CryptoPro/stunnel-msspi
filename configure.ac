@@ -29,6 +29,7 @@ case "${host_os}" in
 esac
 
 AC_PROG_CC([gcc clang cl cc])
+AC_PROG_CXX
 AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
@@ -307,6 +308,47 @@ AC_ARG_ENABLE(ipv6,
         AC_DEFINE([USE_IPv6], [1], [Define to 1 to enable IPv6 support])
     ], [
         AC_MSG_RESULT([no])
+    ]
+)
+
+# Use msspi?
+AC_MSG_CHECKING([whether to enable msspi support])
+AC_ARG_ENABLE(msspi,
+[  --enable-msspi          enable msspi support],
+    [
+        case "$enableval" in
+            yes) AC_MSG_RESULT([yes])
+                 AC_DEFINE([USE_MSSPI], [1],
+                    [Define to 1 to enable MSSPI support])
+                 AC_DEFINE([MSSPI_USE_MSSPI_CERT], [1],
+                    [Define to 1 to enable MSSPI certificate parsing])
+
+                 LIBS="-L./msspi/build_linux -lmsspi-cert $LIBS -lstdc++ -ldl"
+                 case "$host_cpu" in
+                    arm*) LIBS="$LIBS -L/opt/cprocsp/lib/arm"
+                           ;;
+                    aarch64) LIBS="$LIBS -L/opt/cprocsp/lib/aarch64"
+                           ;;
+                    amd64|x86_64) LIBS="$LIBS -L/opt/cprocsp/lib/amd64"
+                           ;;
+                    mips*) LIBS="$LIBS -L/opt/cprocsp/lib/mipsel"
+                           ;;
+                    *)     LIBS="$LIBS -L/opt/cprocsp/lib/amd64"
+                           ;;
+                 esac
+                 LIBS="$LIBS -lcapi10 -lcapi20 -lrdrsup"
+
+                 ;;
+            no)  AC_MSG_RESULT([no])
+                 ;;
+            *)   AC_MSG_RESULT([error])
+                 AC_MSG_ERROR([bad value \"${enableval}\"])
+                 ;;
+        esac
+    ], [
+        AC_MSG_RESULT([no (default)])
+    ], [
+        AC_MSG_RESULT([yes])
     ]
 )
 

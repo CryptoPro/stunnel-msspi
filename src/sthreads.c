@@ -105,6 +105,8 @@ unsigned long stunnel_thread_id(void) {
 
 #endif /* USE_WIN32 */
 
+#ifdef NO_OPENSSLOFF
+
 #if OPENSSL_VERSION_NUMBER>=0x10000000L && OPENSSL_VERSION_NUMBER<0x10100004L
 NOEXPORT void threadid_func(CRYPTO_THREADID *tid) {
     CRYPTO_THREADID_set_numeric(tid, stunnel_thread_id());
@@ -120,10 +122,14 @@ NOEXPORT void thread_id_init(void) {
 #endif
 }
 
+#else /* NO_OPENSSLOFF */
+void thread_id_init( void ){ }
+#endif /* NO_OPENSSLOFF */
+
 /**************************************** locking */
 
 /* we only need to initialize locking with OpenSSL older than 1.1.0 */
-#if OPENSSL_VERSION_NUMBER<0x10100004L
+#if NO_OPENSSL_LOCKS
 
 #ifdef USE_PTHREAD
 
@@ -259,7 +265,7 @@ NOEXPORT void s_lock_destroy_debug(struct CRYPTO_dynlock_value *lock,
 
 #endif /* USE_WIN32 */
 
-NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK *lock) {
+NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK_stunnel *lock) {
     int ret;
 
     (void)lock; /* squash the unused parameter warning */
@@ -279,11 +285,11 @@ NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK *lock) {
     return ret;
 }
 
-#endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
+#endif /* NO_OPENSSL_LOCKS */
 
-CRYPTO_RWLOCK *stunnel_locks[STUNNEL_LOCKS];
+CRYPTO_RWLOCK_stunnel *stunnel_locks[STUNNEL_LOCKS];
 
-#if OPENSSL_VERSION_NUMBER<0x10100004L
+#if NO_OPENSSL_LOCKS
 
 #ifdef USE_OS_THREADS
 
@@ -331,7 +337,7 @@ NOEXPORT int s_add_lock_cb(int *num, int amount, int type,
 CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void) {
     struct CRYPTO_dynlock_value *lock;
 
-    lock=str_alloc_detached(sizeof(CRYPTO_RWLOCK));
+    lock=str_alloc_detached(sizeof(struct CRYPTO_dynlock_value));
     s_lock_init_debug(lock, __FILE__, __LINE__);
     return lock;
 }
@@ -383,14 +389,15 @@ void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock) {
 #endif /* USE_OS_THREADS */
 
 int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock) {
-    *ret=s_atomic_add(val, amount, lock);
+    *ret=s_atomic_add(val, amount, (CRYPTO_RWLOCK_stunnel *)lock);
     return 1;
 }
 
-#endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
+#endif /* NO_OPENSSL_LOCKS */
 
 NOEXPORT void locking_init(void) {
     size_t i;
+#ifdef NO_OPENSSLOFF
 #if defined(USE_OS_THREADS) && OPENSSL_VERSION_NUMBER<0x10100004L
     size_t num;
 
@@ -409,6 +416,7 @@ NOEXPORT void locking_init(void) {
     CRYPTO_set_dynlock_lock_callback(s_dynlock_lock_cb);
     CRYPTO_set_dynlock_destroy_callback(s_dynlock_destroy_cb);
 #endif /* defined(USE_OS_THREADS) && OPENSSL_VERSION_NUMBER<0x10100004L */
+#endif /* NO_OPENSSLOFF */
 
     /* initialize stunnel critical sections */
     for(i=0; i<STUNNEL_LOCKS; i++) /* all the mutexes */

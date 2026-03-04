@@ -53,9 +53,10 @@ int main(int argc, char* argv[]) { /* execution begins here 8-) */
 #ifdef M_MMAP_THRESHOLD
     mallopt(M_MMAP_THRESHOLD, 4096);
 #endif
-    retval=stunnel_init();
-    if(retval)
-        return retval;
+    tls_init(); /* initialize thread-local storage */
+#ifdef NO_OPENSSLOFF
+    crypto_init(); /* initialize libcrypto */
+#endif // NO_OPENSSLOFF
     retval=main_unix(argc, argv);
     main_cleanup();
     return retval;
@@ -270,6 +271,7 @@ void ui_new_log(const char *line) {
     fprintf(stderr, "%s\n", line);
 }
 
+#ifdef NO_OPENSSLOFF
 /**************************************** ctx callbacks */
 
 int ui_passwd_cb(char *buf, int size, int rwflag, void *userdata) {
@@ -295,5 +297,6 @@ int (*ui_get_closer(void)) (UI *) {
 }
 
 #endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
+#endif /* NO_OPENSSLOFF */
 
 /* end of ui_unix.c */

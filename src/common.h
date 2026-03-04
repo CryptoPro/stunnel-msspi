@@ -47,11 +47,7 @@
 #define LIBWRAP_CLIENTS 5
 
 /* CPU stack size */
-#if defined(__ILP32__) && !defined(__NetBSD__)
-#define DEFAULT_STACK_SIZE 65536
-#else
-#define DEFAULT_STACK_SIZE 131072
-#endif
+#define DEFAULT_STACK_SIZE 196608
 /* #define DEBUG_STACK_SIZE */
 
 /* I/O buffer size: 18432 (0x4800) is the maximum size of TLS record payload */
@@ -434,6 +430,25 @@ extern char *sys_errlist[];
 /* opensslv.h requires prior opensslconf.h to include -fips in version string */
 #include <openssl/opensslv.h>
 
+#ifdef NO_OPENSSLOFF
+#else /* NO_OPENSSLOFF */
+#define OPENSSL_NO_ENGINE
+#define OPENSSL_NO_PSK
+#define OPENSSL_NO_ECDH
+#define OPENSSL_NO_DH
+#define OPENSSL_NO_COMP
+#define OPENSSL_NO_MD4
+#define OPENSSL_NO_TLS1_3
+#undef OPENSSL_VERSION_NUMBER
+#define OPENSSL_VERSION_NUMBER 0x10100000L
+#ifndef TLS1_1_VERSION
+#define TLS1_1_VERSION 0x0302
+#endif
+#ifndef TLS1_2_VERSION
+#define TLS1_2_VERSION 0x0303
+#endif
+#endif /* NO_OPENSSLOFF */
+
 #if OPENSSL_VERSION_NUMBER<0x0090700fL
 #error OpenSSL 0.9.7 or later is required
 #endif /* OpenSSL older than 0.9.7 */
@@ -480,9 +495,12 @@ extern char *sys_errlist[];
 #define OPENSSL_NO_TLS1_3
 #endif /* OpenSSL older than 1.1.1 */
 
+#ifdef NO_OPENSSLOFF
 #ifdef USE_WIN32
 #define USE_FIPS
 #endif
+#else /* NO_OPENSSLOFF */
+#endif /* NO_OPENSSLOFF */
 
 #include <openssl/conf.h>
 #include <openssl/lhash.h>

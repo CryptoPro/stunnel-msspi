@@ -293,9 +293,9 @@ NOEXPORT void log_raw(SERVICE_OPTIONS *opt,
 #endif /* USE_WIN32, __vms */
             if(outfile) {
                 file_putline_newline(outfile, line);
-#ifndef USE_OS_THREADS
+//#ifndef USE_OS_THREADS
                 file_flush(outfile);
-#endif /* !USE_OS_THREADS */
+//#endif /* !USE_OS_THREADS */
             }
         }
         break;

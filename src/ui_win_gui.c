@@ -184,6 +184,11 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
         LPSTR lpCmdLine,
 #endif
         int nCmdShow) {
+    TCHAR stunnel_exe_path[MAX_PATH];
+    LPTSTR c;
+#ifndef _WIN32_WCE
+    LPTSTR errmsg;
+#endif
     HANDLE daemon;
 
     (void)prev_instance; /* squash the unused parameter warning */
@@ -191,10 +196,37 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
     (void)nCmdShow; /* squash the unused parameter warning */
 
     ghInst=this_instance;
-    if(stunnel_init()) {
-        message_box(TEXT("Initialization failed"), MB_ICONERROR);
+
+    /* set current working directory and engine path */
+    GetModuleFileName(0, stunnel_exe_path, MAX_PATH);
+    c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* last backslash */
+    if(c) { /* found */
+        *c=TEXT('\0'); /* truncate the program name */
+        c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* previous backslash */
+        if(c && !_tcscmp(c+1, TEXT("bin")))
+            *c=TEXT('\0'); /* truncate "bin" */
+    }
+#ifndef _WIN32_WCE
+    if(!SetCurrentDirectory(stunnel_exe_path)) {
+        errmsg=str_tprintf(TEXT("Cannot set directory to %s"),
+            stunnel_exe_path);
+        message_box(errmsg, MB_ICONERROR);
+        str_free(errmsg);
         return 1;
     }
+    /* try to enter the "config" subdirectory, ignore the result */
+    SetCurrentDirectory(TEXT("config"));
+#endif
+#ifdef NO_OPENSSLOFF
+    _tputenv(str_tprintf(TEXT("OPENSSL_ENGINES=%s\\engines"),
+        stunnel_exe_path));
+    _tputenv(str_tprintf(TEXT("OPENSSL_MODULES=%s\\ossl-modules"),
+        stunnel_exe_path));
+    _tputenv(str_tprintf(TEXT("OPENSSL_CONF=%s\\config\\openssl.cnf"),
+        stunnel_exe_path));
+    crypto_init(); /* initialize libcrypto */
+#endif // NO_OPENSSLOFF
+
     gui_cmdline(); /* setup global cmdline structure */
     control_pipe_names();
 
@@ -1298,6 +1330,21 @@ NOEXPORT LPTSTR log_txt(void) {
     buff[ptr]=TEXT('\0');
     return buff;
 }
+
+#ifndef NO_OPENSSLOFF
+
+BOOL WINAPI CryptHashCertificate( void * unused, ALG_ID Algid, DWORD dwFlags, const BYTE * pbEncoded, DWORD cbEncoded, BYTE * pbComputedHash, DWORD * pcbComputedHash );
+
+unsigned char * SHA256( const unsigned char * d, size_t n, unsigned char * md )
+{
+    DWORD dwLen = 32;
+    CryptHashCertificate( NULL, 32780 /* CALG_SHA_256 */, 0, d, (DWORD)n, md, &dwLen );
+    return NULL;
+}
+
+SERVICE_OPTIONS * current_section = NULL;
+
+#endif /* NO_OPENSSLOFF */
 
 /**************************************** control pipe */
 

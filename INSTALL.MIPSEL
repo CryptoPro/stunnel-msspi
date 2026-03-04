@@ -1,0 +1,80 @@
+
+# Пример основан на статье: https://www.altlinux.org/Ports/mipsel/%D0%97%D0%B0%D0%BF%D1%83%D1%81%D0%BA_%D0%B2_QEmu
+# Сборка на altlinux в эмуляторе QEMU
+
+
+# Подготовка ядра и образа
+# ----------------------------------------
+# Debian package dependencies for the host
+HOST_DEPENDENCIES="qemu-system-mips"
+apt-get install -y ${HOST_DEPENDENCIES} || exit 1
+
+# Ядро. Скачиваем и распаковываем un-malta
+wget http://ftp.altlinux.org/pub/distributions/ALTLinux/ports/mipsel/Sisyphus/mipsel/RPMS.classic/kernel-image-un-malta-4.16.8-alt1.mipsel.rpm
+mkdir kernel && cd kernel
+rpm2cpio ../kernel-image-un-malta-4.16.8-alt1.mipsel.rpm | cpio -id
+cd .. && cp kernel/boot/vmlinuz-4.16.8-un-malta-alt1 vmlinuz
+
+# Образ со сборочными инструментами и запуск эмулятора
+wget http://ftp.altlinux.org/pub/people/jqt4/latest/Basealt-Sisyphus-QEmu-builder-mipsel.qcow2c
+qemu-system-mips64el \
+-kernel vmlinuz \
+-append "console=ttyS0 root=/dev/sda1 rootwait" \
+-m 2G \
+-serial mon:stdio \
+-drive file=Basealt-Sisyphus-QEmu-builder-mipsel.qcow2c,format=qcow2 \
+-device virtio-keyboard-pci \
+-net nic \
+-net user,hostfwd=tcp::2270-:22 \
+-cpu mips64dspr2 \
+-display none \
+-device usb-mouse
+# ----------------------------------------
+
+
+
+# Предполагаем, что теперь находимся внутри образа
+# login: builder, password: alt
+# ----------------------------------------
+
+# Rpm package dependencies for the chrooted environment
+# Некоторые замечания:
+# 1) В случае ошибок с gcc и g++, можно попробовать поставить gcc-7, gcc7-c++
+#    и поставить symlink-и, например: gcc -> mipsel-alt-linux-gcc-7.
+# 2) pod2doc, pod2html устанавливаются в рамках perl-CPAN, возможно, можно проще.
+# 3) Для CSP не нужно cprocsp-preinstall, достаточно lsb-core.
+GUEST_DEPENDENCIES="gcc gcc-c++ m4 autoconf libtool autoconf-archive lsb-core libssl-devel perl-CPAN"
+sudo apt-get install -y ${GUEST_DEPENDENCIES}
+
+# Сборка stunnel
+echo "export CPRO_SUFFIX=mipsel" > envvars.sh
+chmod a+x envvars.sh
+
+# Установка CSP (нужны libcapi10, libcapi20)
+if [ "$MSSPI" = "yes" ]; then
+    cd ./linux-mipsel
+    sudo ./install.sh $CSPMODE || exit 1
+    cd ../src/msspi/build_linux
+    make || exit 1
+    cd ../../.. ;
+fi
+
+. ./envvars.sh
+autoreconf -fvi && touch src/dhparam.c
+./configure $CONFIGURE_OPTIONS || exit 1
+make || exit 1
+
+if [ -z "$MSSPI" ]; then 
+    make test || ( for FILE in tests/logs/*.log; do echo "*** $FILE ***"; cat "$FILE"; done; false ); 
+else
+    if [ "$MSSPI" = "yes" ]; then 
+        mv ./src/stunnel ./src/stunnel-msspi
+        cd tests
+        # Возможно нужно выставить PERLLIB и PERL5LIB
+        sudo perl test-stunnel-msspi.pl || exit 1
+        cd ../src
+        tar -cvzf ${BUILD_TAG}_linux-mipsel.tar.gz stunnel-msspi
+        cd ..;
+    fi
+fi
+# ----------------------------------------

@@ -113,7 +113,9 @@ int stunnel_init(void) { /* basic initialization */
 
     tls_init(); /* initialize thread-local storage */
     str_init(); /* initialize memory allocator */
+#ifdef NO_OPENSSLOFF
     crypto_init(); /* initialize libcrypto */
+#endif /* NO_OPENSSLOFF */
 #ifdef USE_WIN32
     if(WSAStartup(MAKEWORD(2, 2), &wsa_state))
         return 1; /* error */
@@ -139,8 +141,10 @@ void main_init(void) { /* one-time initialization */
 #endif
     /* basic initialization contains essential functions required for logging
      * subsystem to function properly, thus all errors here are fatal */
+#ifdef NO_OPENSSLOFF
     if(ssl_init()) /* initialize libssl */
         fatal("TLS initialization failed");
+#endif /* NO_OPENSSLOFF */
     if(sthreads_init()) /* initialize critical sections & TLS callbacks */
         fatal("Threads initialization failed");
     options_defaults(); /* initialize defaults */
@@ -289,14 +293,22 @@ NOEXPORT void terminate_threads(void) {
         thread_list[i++]=c->thread_id;
         s_log(LOG_DEBUG, "Terminating a thread for [%s]", c->opt->servname);
     }
+#ifdef NO_OPENSSLOFF
+    if(cron_thread_id) { /* append cron_thread_id if used */
+        thread_list[threads++]=cron_thread_id;
+        s_log(LOG_DEBUG, "Terminating the cron thread");
+    }
+
     if(per_second_thread_id) { /* append per_second_thread_id if used */
         thread_list[threads++]=per_second_thread_id;
         s_log(LOG_DEBUG, "Terminating the per-second thread");
     }
+
     if(per_day_thread_id) { /* append per_day_thread_id if used */
         thread_list[threads++]=per_day_thread_id;
         s_log(LOG_DEBUG, "Terminating the per-day thread");
     }
+#endif /* NO_OPENSSLOFF */
     CRYPTO_THREAD_unlock(stunnel_locks[LOCK_THREAD_LIST]);
 
     if(threads) {
@@ -374,10 +386,12 @@ NOEXPORT void status_info(int pid, int status, const char *info) {
 /**************************************** main loop accepting connections */
 
 void daemon_loop(void) {
+#ifdef NO_OPENSSLOFF
     if(cron_init()) { /* initialize periodic events */
         s_log(LOG_CRIT, "Cron initialization failed");
         exit(1);
     }
+#endif /* NO_OPENSSLOFF */
     if(exec_connect_start()) {
         s_log(LOG_CRIT, "Failed to start exec+connect services");
         exit(1);
@@ -1061,6 +1075,7 @@ void stunnel_info(int level) {
     char *features;
 
     s_log(level, "stunnel " STUNNEL_VERSION " on " HOST " platform");
+#ifdef NO_OPENSSLOFF
     if(strcmp(OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION))) {
         s_log(level, "Compiled with " OPENSSL_VERSION_TEXT);
         s_log(level, "Running  with %s", OpenSSL_version(OPENSSL_VERSION));
@@ -1074,6 +1089,9 @@ void stunnel_info(int level) {
     } else {
         s_log(level, "Compiled/running with " OPENSSL_VERSION_TEXT);
     }
+#else /* NO_OPENSSLOFF */
+    s_log( level, "Compiled without OPENSSL" );
+#endif /* NO_OPENSSLOFF */
 
     features=str_dup("Threading:");
 #ifdef USE_UCONTEXT

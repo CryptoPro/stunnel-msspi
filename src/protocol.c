@@ -1620,6 +1620,8 @@ NOEXPORT void crypt_DES(DES_cblock dst, const_DES_cblock src,
 
 #endif
 
+#ifdef NO_OPENSSLOFF
+
 NOEXPORT char *base64(int encode, const char *in, int len) {
     BIO *bio, *b64;
     char *out;
@@ -1657,6 +1659,51 @@ NOEXPORT char *base64(int encode, const char *in, int len) {
     BIO_free_all(bio);
     return out;
 }
+
+
+#else /* NO_OPENSSLOFF */
+
+#ifndef _WIN32
+#define WINAPI
+#endif
+
+int WINAPI CryptStringToBinaryA( const char * pszString, uint32_t cchString, uint32_t dwFlags, char * pbBinary, uint32_t * pcbBinary, uint32_t * pdwSkip, uint32_t * pdwFlags );
+int WINAPI CryptBinaryToStringA( const char * pbBinary, uint32_t cbBinary, uint32_t dwFlags, char * pszString, uint32_t * pcchString );
+
+NOEXPORT char * base64( int encode, const char * in, int len )
+{
+    char * out;
+
+    if( encode )
+    {
+        uint32_t dwFlags = 0x40000001; // CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF
+        uint32_t dwLen = 0;
+        if( !CryptBinaryToStringA( in, (uint32_t)len, dwFlags, NULL, &dwLen ) )
+            return NULL;
+        out = str_alloc( dwLen );
+        if( !out )
+            return NULL;
+        if( CryptBinaryToStringA( in, (uint32_t)len, dwFlags, out, &dwLen ) )
+            return out;
+    }
+    else
+    {
+        uint32_t dwFlags = 0x00000006; // CRYPT_STRING_BASE64
+        uint32_t dwLen = 0;
+        if( !CryptStringToBinaryA( in, (uint32_t)len, dwFlags, NULL, &dwLen, NULL, NULL ) )
+            return NULL;
+        out = str_alloc( dwLen );
+        if( !out )
+            return NULL;
+        if( CryptStringToBinaryA( in, (uint32_t)len, dwFlags, out, &dwLen, NULL, NULL ) )
+            return out;        
+    }
+
+    str_free( out );
+    return NULL;
+}
+
+#endif /* NO_OPENSSLOFF */
 
 /**************************************** capwin authentication support */
 
