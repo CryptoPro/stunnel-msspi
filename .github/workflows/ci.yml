@@ -2,7 +2,7 @@ name: ci
 on: [push]
 
 jobs:
-  test:
+  linux:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -15,9 +15,9 @@ jobs:
     env:
       BUILD_OS: ${{ matrix.build-os }}
 
-    name: CI
+    name: CI (${{ matrix.build-os }})
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Setup
       shell: bash
@@ -72,10 +72,30 @@ jobs:
         else
           exit 1
         fi
-        echo ::set-output name=VERSION::${GITHUB_REF#refs/*/}-${BUILD_OS}
+        echo "VERSION=${GITHUB_REF#refs/*/}-${BUILD_OS}" >> "$GITHUB_OUTPUT"
 
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: src/${{ steps.build.outputs.VERSION }}.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    name: CI (windows)
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      shell: cmd
+      env:
+        BUILD_TAG: ${{ github.ref_name }}
+      run: build_win.bat
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          ${{ github.ref_name }}-386-windows.zip
+          ${{ github.ref_name }}-amd64-windows.zip
