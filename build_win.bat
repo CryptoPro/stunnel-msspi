@@ -4,10 +4,13 @@ setlocal enabledelayedexpansion
 git submodule init
 git submodule update
 
-set OPENSSL_VERSION=openssl-1.1.1d-gost-0.28
+set OPENSSL_VERSION=openssl-1.1.1-gost-0.30
 set OPENSSL_URL=https://github.com/deemru/openssl/releases/download/%OPENSSL_VERSION%/
 
 curl -fsSL -o includes.zip %OPENSSL_URL%includes.zip || exit /b 1
+curl -fsSL -o bin32.zip %OPENSSL_URL%bin32.zip || exit /b 1
+curl -fsSL -o bin64.zip %OPENSSL_URL%bin64.zip || exit /b 1
+
 7z x includes.zip -aoa
 set OPENSSL_INCLUDE=.
 curl -fsSL -o %OPENSSL_INCLUDE%\openssl\applink.c https://raw.githubusercontent.com/deemru/openssl/%OPENSSL_VERSION%/ms/applink.c || exit /b 1
@@ -35,6 +38,9 @@ echo.
 
 call "%VCVARSALL%" x86 || exit /b 1
 
+7z x bin32.zip -aoa
+copy /y bin32\opensslconf.h %OPENSSL_INCLUDE%\openssl\opensslconf.h >nul
+
 cl %CFLAGS_CPP% %SRC_CPP% || exit /b 1
 for %%f in (%SRC_C%) do (
     cl %CFLAGS_C% %%f || exit /b 1
@@ -56,6 +62,9 @@ echo ========== Building x64 ==========
 echo.
 
 call "%VCVARSALL%" x64 || exit /b 1
+
+7z x bin64.zip -aoa
+copy /y bin64\opensslconf.h %OPENSSL_INCLUDE%\openssl\opensslconf.h >nul
 
 cl %CFLAGS_CPP% %SRC_CPP% || exit /b 1
 for %%f in (%SRC_C% src/cron.c) do (
