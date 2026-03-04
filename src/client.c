@@ -889,7 +889,7 @@ NOEXPORT void ssl_start(CLI *c) {
 
         for( j = 0; j < 2; j++ )
         {
-            char * cert = j == 0 ? c->opt->cert : c->opt->cert2;
+            char * cert = j == 0 ? (c->opt->cert ? c->opt->cert->name : NULL) : c->opt->cert2;
             char * pin = j == 0 ? c->opt->pin : c->opt->pin2;
             char * pcerttype = j == 0 ? &c->opt->certtype : &c->opt->certtype2;
             // certtype:
