@@ -42,6 +42,7 @@
 #define MSSPISSL
 #define NO_OPENSSL
 #define USE_OS_THREADS
+typedef void CRYPTO_RWLOCK;
 #endif
 
 #include "version.h"
