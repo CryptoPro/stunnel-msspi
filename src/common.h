@@ -438,8 +438,7 @@ extern char *sys_errlist[];
 /* opensslv.h requires prior opensslconf.h to include -fips in version string */
 #include <openssl/opensslv.h>
 
-#ifdef NO_OPENSSLOFF
-#else /* NO_OPENSSLOFF */
+#ifdef MSSPISSL
 #define OPENSSL_NO_ENGINE
 #define OPENSSL_NO_PSK
 #define OPENSSL_NO_ECDH
@@ -455,7 +454,7 @@ extern char *sys_errlist[];
 #ifndef TLS1_2_VERSION
 #define TLS1_2_VERSION 0x0303
 #endif
-#endif /* NO_OPENSSLOFF */
+#endif /* MSSPISSL */
 
 #if OPENSSL_VERSION_NUMBER<0x0090700fL
 #error OpenSSL 0.9.7 or later is required
