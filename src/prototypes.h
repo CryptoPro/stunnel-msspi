@@ -40,12 +40,6 @@
 
 #include "common.h"
 
-#ifdef USE_MSSPI
-#define MSSPISSL
-#define NO_OPENSSL
-#define USE_OS_THREADS
-#endif
-
 #ifdef MSSPISSL
 #include "msspi/src/msspi.h"
 #endif
@@ -100,7 +94,11 @@ struct CRYPTO_dynlock_value {
 #endif
 };
 
+#ifdef NO_OPENSSLOFF
 typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK;
+#else /* NO_OPENSSLOFF */
+typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK_REAL;
+#endif /* NO_OPENSSLOFF */
 
 #else /* USE_OS_THREADS */
 

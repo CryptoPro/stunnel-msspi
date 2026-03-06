@@ -38,6 +38,12 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#ifdef USE_MSSPI
+#define MSSPISSL
+#define NO_OPENSSL
+#define USE_OS_THREADS
+#endif
+
 #include "version.h"
 
 /**************************************** common constants */

@@ -337,7 +337,7 @@ NOEXPORT int s_add_lock_cb(int *num, int amount, int type,
 CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void) {
     struct CRYPTO_dynlock_value *lock;
 #ifdef MSSPISSL
-    lock=str_alloc_detached(sizeof(CRYPTO_dynlock_value));
+    lock=str_alloc_detached(sizeof(CRYPTO_RWLOCK_REAL));
 #else
     lock=str_alloc_detached(sizeof(CRYPTO_RWLOCK));
 #endif
