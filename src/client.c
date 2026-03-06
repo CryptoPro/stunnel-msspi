@@ -1215,8 +1215,7 @@ NOEXPORT void ssl_start(CLI *c) {
         return;
     }
 }
-#endif /* MSSPISSL */
-#ifdef NO_OPENSSLOFF
+#else /* MSSPISSL */
     ERR_clear_error(); /* silence any cached errors */
     print_cipher(c);
     sess=SSL_get1_session(c->ssl);
@@ -1247,7 +1246,9 @@ NOEXPORT void ssl_start(CLI *c) {
     }
     c->flag.redirect=(unsigned)redirect(c)&1;
 }
+#endif /* MSSPISSL */
 
+#ifdef NO_OPENSSLOFF
 NOEXPORT void session_cache_retrieve(CLI *c) {
     SSL_SESSION *sess=NULL;
 
