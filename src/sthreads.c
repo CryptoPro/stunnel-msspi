@@ -123,13 +123,13 @@ NOEXPORT void thread_id_init(void) {
 }
 
 #else /* NO_OPENSSLOFF */
-void thread_id_init( void ){ }
+NOEXPORT void thread_id_init( void ){ }
 #endif /* NO_OPENSSLOFF */
 
 /**************************************** locking */
 
 /* we only need to initialize locking with OpenSSL older than 1.1.0 */
-#if NO_OPENSSL_LOCKS
+#if OPENSSL_VERSION_NUMBER<0x10100004L
 
 #ifdef USE_PTHREAD
 
@@ -265,7 +265,7 @@ NOEXPORT void s_lock_destroy_debug(struct CRYPTO_dynlock_value *lock,
 
 #endif /* USE_WIN32 */
 
-NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK_stunnel *lock) {
+NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK *lock) {
     int ret;
 
     (void)lock; /* squash the unused parameter warning */
@@ -285,11 +285,11 @@ NOEXPORT int s_atomic_add(int *val, int amount, CRYPTO_RWLOCK_stunnel *lock) {
     return ret;
 }
 
-#endif /* NO_OPENSSL_LOCKS */
+#endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
 
-CRYPTO_RWLOCK_stunnel *stunnel_locks[STUNNEL_LOCKS];
+CRYPTO_RWLOCK *stunnel_locks[STUNNEL_LOCKS];
 
-#if NO_OPENSSL_LOCKS
+#if OPENSSL_VERSION_NUMBER<0x10100004L
 
 #ifdef USE_OS_THREADS
 
@@ -337,7 +337,7 @@ NOEXPORT int s_add_lock_cb(int *num, int amount, int type,
 CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void) {
     struct CRYPTO_dynlock_value *lock;
 
-    lock=str_alloc_detached(sizeof(struct CRYPTO_dynlock_value));
+    lock=str_alloc_detached(sizeof(CRYPTO_RWLOCK));
     s_lock_init_debug(lock, __FILE__, __LINE__);
     return lock;
 }
@@ -389,11 +389,11 @@ void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock) {
 #endif /* USE_OS_THREADS */
 
 int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock) {
-    *ret=s_atomic_add(val, amount, (CRYPTO_RWLOCK_stunnel *)lock);
+    *ret=s_atomic_add(val, amount, lock);
     return 1;
 }
 
-#endif /* NO_OPENSSL_LOCKS */
+#endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
 
 NOEXPORT void locking_init(void) {
     size_t i;

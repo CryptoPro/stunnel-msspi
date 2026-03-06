@@ -36,40 +36,6 @@
  */
 
 #include "common.h"
-
-/* Save openssl functions */
-#ifdef USE_MSSPI
-#ifdef NO_OPENSSLOFF
-int SSL_connect_prx( SSL * s ) { return SSL_connect( s ); }
-int SSL_accept_prx( SSL * s ) { return SSL_accept( s ); }
-int SSL_write_prx( SSL * s, const void * buf, int num ) { return SSL_write( s, buf, num ); }
-int SSL_read_prx( SSL * s, void * buf, int num ) { return SSL_read( s, buf, num ); }
-void SSL_free_prx( SSL * s ) { SSL_free( s ); }
-int SSL_shutdown_prx( SSL * s ) { return SSL_shutdown( s ); }
-void SSL_set_shutdown_prx( SSL * s, int mode ) { SSL_set_shutdown( s, mode ); }
-int SSL_get_shutdown_prx( const SSL * s ) { return SSL_get_shutdown( s ); }
-const char * SSL_get_version_prx( const SSL * s ) { return SSL_get_version( s ); }
-int SSL_version_prx( const SSL * s ) { return SSL_version( s ); }
-int SSL_pending_prx( const SSL * s ) { return SSL_pending( s ); }
-int SSL_get_error_prx( const SSL *s, int ret_code ) { return SSL_get_error( s, ret_code ); }
-#else /* NO_OPENSSLOFF */
-int SSL_connect_prx( SSL * s ) { return 0; }
-int SSL_accept_prx( SSL * s ) { return 0; }
-int SSL_write_prx( SSL * s, const void * buf, int num ) { return 0; }
-int SSL_read_prx( SSL * s, void * buf, int num ) { return 0; }
-void SSL_free_prx( SSL * s ) { return; }
-int SSL_shutdown_prx( SSL * s ) { return 0; }
-void SSL_set_shutdown_prx( SSL * s, int mode ) { return; }
-int SSL_get_shutdown_prx( const SSL * s ) { return 0; }
-const char * SSL_get_version_prx( const SSL * s ) { return NULL; }
-int SSL_version_prx( const SSL * s ) { return 0; }
-int SSL_pending_prx( const SSL * s ) { return 0; }
-int SSL_get_error_prx( const SSL *s, int ret_code ) { return 0; }
-int fips_available() { return 0; }
-int FIPS_mode() { return 0; }
-#endif /* NO_OPENSSLOFF */
-#endif /* USE_MSSPI */
-
 #include "prototypes.h"
 
 #ifdef MSSPISSL
@@ -579,7 +545,7 @@ NOEXPORT void client_run(CLI *c) {
 #endif
     }
 
-#else /* NO_OPENSSLOFF */
+#endif /* NO_OPENSSLOFF */
 #ifdef MSSPISSL
     if( c->msh )
     {
@@ -593,9 +559,7 @@ NOEXPORT void client_run(CLI *c) {
         closesocket( c->exec_fd );
         c->exec_fd = INVALID_SOCKET;
     }
-
 #endif /* MSSPISSL */
-#endif /* NO_OPENSSLOFF */
 
         /* cleanup the remote socket */
     if(c->remote_fd.fd!=INVALID_SOCKET) { /* remote socket initialized */
@@ -1031,7 +995,9 @@ NOEXPORT void ssl_start(CLI *c) {
         (OpenSSL_version_num()>=0x10000000L &&
         OpenSSL_version_num()<0x1000002fL);
 #endif /* OpenSSL version < 1.1.0 */
+#endif /* NO_OPENSSLOFF */
     while(1) {
+#ifdef NO_OPENSSLOFF
         /* critical section for OpenSSL version < 0.9.8p or 1.x.x < 1.0.0b *
          * this critical section is a crude workaround for CVE-2010-3864   *
          * see http://www.securityfocus.com/bid/44884 for details          *
@@ -1041,20 +1007,15 @@ NOEXPORT void ssl_start(CLI *c) {
         if(unsafe_openssl)
             CRYPTO_THREAD_write_lock(stunnel_locks[LOCK_SSL]);
 #endif /* OpenSSL version < 1.1.0 */
+#endif /* NO_OPENSSLOFF */
 
         i=c->opt->option.client ? SSL_connect(c->ssl) : SSL_accept(c->ssl);
 
+#ifdef NO_OPENSSLOFF
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
         if(unsafe_openssl)
             CRYPTO_THREAD_unlock(stunnel_locks[LOCK_SSL]);
 #endif /* OpenSSL version < 1.1.0 */
-#else /* NO_OPENSSLOFF */
-    while( 1 )
-    {
-        if( c->opt->option.client )
-            i = SSL_connect( c->ssl );
-        else
-            i = SSL_accept( c->ssl );
 #endif /* NO_OPENSSLOFF */
 
         err=SSL_get_error(c->ssl, i);
@@ -1098,7 +1059,7 @@ NOEXPORT void ssl_start(CLI *c) {
 
             throw_exception( c, 1 );
         }
-#endif
+#endif /* MSSPISSL */
         if(err==SSL_ERROR_SYSCALL) {
             switch(get_last_socket_error()) {
             case S_EINTR:
@@ -1253,10 +1214,9 @@ NOEXPORT void ssl_start(CLI *c) {
 
         return;
     }
-#endif
-#ifndef NO_OPENSSLOFF
 }
-#else /* NO_OPENSSLOFF */
+#endif /* MSSPISSL */
+#ifdef NO_OPENSSLOFF
     ERR_clear_error(); /* silence any cached errors */
     print_cipher(c);
     sess=SSL_get1_session(c->ssl);
@@ -2364,9 +2324,6 @@ NOEXPORT SOCKET connect_remote(CLI *c) {
                     addr_len(&c->connect_addr.addr[c->idx]),
                     c->opt->timeout_connect)) {
 #ifdef NO_OPENSSLOFF
-#ifdef MSSPISSL
-            if( !c->msh )
-#endif
             if(c->ssl) {
                 SSL_SESSION *sess=SSL_get1_session(c->ssl);
                 if(sess) {
@@ -2585,20 +2542,22 @@ NOEXPORT int connect_init(CLI *c, int domain) {
 
 NOEXPORT int redirect(CLI *c) {
     SSL_SESSION *sess;
-    void *ex_data = NULL;
+    void *ex_data;
 
     if(!c->opt->redirect_addr.names)
         return 0; /* redirect not configured */
+#ifdef NO_OPENSSLOFF
     if(!c->ssl)
         return 1; /* TLS not established -> always redirect */
-#ifdef NO_OPENSSLOFF
     sess=SSL_get1_session(c->ssl);
     if(!sess)
         return 1; /* no TLS session -> always redirect */
     ex_data=SSL_SESSION_get_ex_data(sess, index_session_authenticated);
     SSL_SESSION_free(sess);
-#endif /* NO_OPENSSLOFF */
     return ex_data == NULL;
+#else /* NO_OPENSSLOFF */
+    return 1;
+#endif /* NO_OPENSSLOFF */
 }
 
 NOEXPORT void print_bound_address(CLI *c) {

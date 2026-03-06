@@ -184,11 +184,6 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
         LPSTR lpCmdLine,
 #endif
         int nCmdShow) {
-    TCHAR stunnel_exe_path[MAX_PATH];
-    LPTSTR c;
-#ifndef _WIN32_WCE
-    LPTSTR errmsg;
-#endif
     HANDLE daemon;
 
     (void)prev_instance; /* squash the unused parameter warning */
@@ -200,37 +195,6 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
         message_box(TEXT("Initialization failed"), MB_ICONERROR);
         return 1;
     }
-
-    /* set current working directory and engine path */
-    GetModuleFileName(0, stunnel_exe_path, MAX_PATH);
-    c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* last backslash */
-    if(c) { /* found */
-        *c=TEXT('\0'); /* truncate the program name */
-        c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* previous backslash */
-        if(c && !_tcscmp(c+1, TEXT("bin")))
-            *c=TEXT('\0'); /* truncate "bin" */
-    }
-#ifndef _WIN32_WCE
-    if(!SetCurrentDirectory(stunnel_exe_path)) {
-        errmsg=str_tprintf(TEXT("Cannot set directory to %s"),
-            stunnel_exe_path);
-        message_box(errmsg, MB_ICONERROR);
-        str_free(errmsg);
-        return 1;
-    }
-    /* try to enter the "config" subdirectory, ignore the result */
-    SetCurrentDirectory(TEXT("config"));
-#endif
-#ifdef NO_OPENSSLOFF
-    _tputenv(str_tprintf(TEXT("OPENSSL_ENGINES=%s\\engines"),
-        stunnel_exe_path));
-    _tputenv(str_tprintf(TEXT("OPENSSL_MODULES=%s\\ossl-modules"),
-        stunnel_exe_path));
-    _tputenv(str_tprintf(TEXT("OPENSSL_CONF=%s\\config\\openssl.cnf"),
-        stunnel_exe_path));
-    /* crypto_init() already called by stunnel_init() */
-#endif // NO_OPENSSLOFF
-
     gui_cmdline(); /* setup global cmdline structure */
     control_pipe_names();
 

@@ -47,16 +47,6 @@ void tls_init(void) {
     tls_platform_init();
     tls_initialized=1;
     ui_tls=tls_alloc(NULL, NULL, "ui");
-#ifdef NO_OPENSSLOFF
-#if OPENSSL_VERSION_NUMBER>=0x10100000L
-    CRYPTO_set_mem_functions(str_alloc_detached_debug,
-        str_realloc_detached_debug, str_free_debug);
-#else
-    CRYPTO_set_mem_ex_functions(str_alloc_detached_debug,
-        str_realloc_detached_debug, free_function);
-#endif
-#endif /* NO_OPENSSLOFF */
-    str_init();
 }
 
 /* this has to be the first function called by a new thread */

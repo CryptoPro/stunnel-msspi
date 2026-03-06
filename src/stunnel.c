@@ -294,16 +294,10 @@ NOEXPORT void terminate_threads(void) {
         s_log(LOG_DEBUG, "Terminating a thread for [%s]", c->opt->servname);
     }
 #ifdef NO_OPENSSLOFF
-    if(cron_thread_id) { /* append cron_thread_id if used */
-        thread_list[threads++]=cron_thread_id;
-        s_log(LOG_DEBUG, "Terminating the cron thread");
-    }
-
     if(per_second_thread_id) { /* append per_second_thread_id if used */
         thread_list[threads++]=per_second_thread_id;
         s_log(LOG_DEBUG, "Terminating the per-second thread");
     }
-
     if(per_day_thread_id) { /* append per_day_thread_id if used */
         thread_list[threads++]=per_day_thread_id;
         s_log(LOG_DEBUG, "Terminating the per-day thread");

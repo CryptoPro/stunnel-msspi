@@ -4389,12 +4389,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_SET_COPY:
         break;
     case CMD_FREE:
-        str_free(section->chain);
 #ifdef NO_OPENSSLOFF
-        if(section->session)
-            SSL_SESSION_free(section->session);
-        if(section->ctx)
-            SSL_CTX_free(section->ctx);
         context_cleanup(section);
 #endif /* NO_OPENSSLOFF */
         str_free(section->servname);
@@ -5517,15 +5512,16 @@ NOEXPORT void name_list_free(NAME_LIST *ptr) {
 }
 
 NOEXPORT void connect_session_free(SERVICE_OPTIONS *section) {
+#ifdef NO_OPENSSLOFF
+    unsigned i;
+#endif /* NO_OPENSSLOFF */
+
     if(!section->connect_session)
         return;
 #ifdef NO_OPENSSLOFF
-    {
-        unsigned i;
-        for(i=0; i<section->connect_addr.num; i++)
-            if(section->connect_session[i])
-                SSL_SESSION_free(section->connect_session[i]);
-    }
+    for(i=0; i<section->connect_addr.num; i++)
+        if(section->connect_session[i])
+            SSL_SESSION_free(section->connect_session[i]);
 #endif /* NO_OPENSSLOFF */
     str_free(section->connect_session);
     section->connect_session=NULL;

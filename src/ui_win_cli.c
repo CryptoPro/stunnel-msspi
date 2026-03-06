@@ -38,41 +38,7 @@
 #include "prototypes.h"
 
 int main(int argc, char *argv[]) {
-    static struct WSAData wsa_state;
-    TCHAR *c, stunnel_exe_path[MAX_PATH];
-
-    tls_init(); /* initialize thread-local storage */
-
-    /* set current working directory and engine path */
-    GetModuleFileName(0, stunnel_exe_path, MAX_PATH);
-    c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* last backslash */
-    if(c) { /* found */
-        *c=TEXT('\0'); /* truncate the program name */
-        c=_tcsrchr(stunnel_exe_path, TEXT('\\')); /* previous backslash */
-        if(c && !_tcscmp(c+1, TEXT("bin")))
-            *c=TEXT('\0'); /* truncate "bin" */
-    }
-#ifndef _WIN32_WCE
-    if(!SetCurrentDirectory(stunnel_exe_path)) {
-        /* log to stderr, as s_log() is not initialized */
-        _ftprintf(stderr, TEXT("Cannot set directory to %s"),
-            stunnel_exe_path);
-        return 1;
-    }
-    /* try to enter the "config" subdirectory, ignore the result */
-    SetCurrentDirectory(TEXT("config"));
-#endif
-#ifdef NO_OPENSSLOFF
-    _tputenv(str_tprintf(TEXT("OPENSSL_ENGINES=%s\\engines"),
-        stunnel_exe_path));
-    _tputenv(str_tprintf(TEXT("OPENSSL_MODULES=%s\\ossl-modules"),
-        stunnel_exe_path));
-    _tputenv(str_tprintf(TEXT("OPENSSL_CONF=%s\\config\\openssl.cnf"),
-        stunnel_exe_path));
-    crypto_init(); /* initialize libcrypto */
-#endif // NO_OPENSSLOFF
-
-    if(WSAStartup(MAKEWORD(2, 2), &wsa_state))
+    if(stunnel_init())
         return 1;
     main_init();
     if(!main_configure(argc>1 ? argv[1] : NULL, argc>2 ? argv[2] : NULL))
@@ -129,14 +95,11 @@ void ui_new_log(const char *line) {
 }
 
 #ifdef NO_OPENSSLOFF
-
 /**************************************** ctx callbacks */
 
 int ui_passwd_cb(char *buf, int size, int rwflag, void *userdata) {
     return PEM_def_callback(buf, size, rwflag, userdata);
 }
-
-#endif /* NO_OPENSSLOFF */
 
 #if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
 
@@ -157,5 +120,6 @@ int (*ui_get_closer(void)) (UI *) {
 }
 
 #endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
+#endif /* NO_OPENSSLOFF */
 
 /* end of ui_win_cli.c */

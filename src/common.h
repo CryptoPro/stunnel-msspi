@@ -507,7 +507,6 @@ extern char *sys_errlist[];
 #ifdef USE_WIN32
 #define USE_FIPS
 #endif
-#else /* NO_OPENSSLOFF */
 #endif /* NO_OPENSSLOFF */
 
 #include <openssl/conf.h>

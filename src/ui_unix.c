@@ -53,10 +53,9 @@ int main(int argc, char* argv[]) { /* execution begins here 8-) */
 #ifdef M_MMAP_THRESHOLD
     mallopt(M_MMAP_THRESHOLD, 4096);
 #endif
-    tls_init(); /* initialize thread-local storage */
-#ifdef NO_OPENSSLOFF
-    crypto_init(); /* initialize libcrypto */
-#endif // NO_OPENSSLOFF
+    retval=stunnel_init();
+    if(retval)
+        return retval;
     retval=main_unix(argc, argv);
     main_cleanup();
     return retval;
