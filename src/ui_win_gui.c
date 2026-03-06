@@ -196,6 +196,10 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
     (void)nCmdShow; /* squash the unused parameter warning */
 
     ghInst=this_instance;
+    if(stunnel_init()) {
+        message_box(TEXT("Initialization failed"), MB_ICONERROR);
+        return 1;
+    }
 
     /* set current working directory and engine path */
     GetModuleFileName(0, stunnel_exe_path, MAX_PATH);
@@ -224,7 +228,7 @@ int WINAPI WinMain(HINSTANCE this_instance, HINSTANCE prev_instance,
         stunnel_exe_path));
     _tputenv(str_tprintf(TEXT("OPENSSL_CONF=%s\\config\\openssl.cnf"),
         stunnel_exe_path));
-    crypto_init(); /* initialize libcrypto */
+    /* crypto_init() already called by stunnel_init() */
 #endif // NO_OPENSSLOFF
 
     gui_cmdline(); /* setup global cmdline structure */
