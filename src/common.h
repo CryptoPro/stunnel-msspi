@@ -53,7 +53,7 @@ typedef void CRYPTO_RWLOCK;
 
 /* CPU stack size */
 #ifdef MSSPISSL
-#define DEFAULT_STACK_SIZE 196608
+#define DEFAULT_STACK_SIZE 262144
 #else
 #if defined(__ILP32__) && !defined(__NetBSD__)
 #define DEFAULT_STACK_SIZE 65536
@@ -322,9 +322,7 @@ typedef int SOCKET;
     /* Unix-specific headers */
 #include <signal.h>         /* signal */
 #include <sys/wait.h>       /* wait */
-#ifdef HAVE_LIMITS_H
 #include <limits.h>         /* INT_MAX */
-#endif
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>   /* getrlimit */
 #endif
@@ -423,8 +421,8 @@ extern char *sys_errlist[];
 #ifdef HAVE_SYS_SYSCALL_H
 #include <sys/syscall.h> /* SYS_gettid */
 #endif
-#ifdef HAVE_LINUX_SCHED_H
-#include <linux/sched.h> /* SCHED_BATCH */
+#ifdef HAVE_SCHED_H
+#include <sched.h> /* SCHED_BATCH */
 #endif
 
 #endif /* USE_WIN32 */

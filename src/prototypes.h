@@ -409,6 +409,8 @@ struct service_options_struct {
     struct {
 #ifdef MSSPISSL
         unsigned msspi:1;               /* use msspi */
+        unsigned silent:1;
+        unsigned selftest:1;
 #endif
         unsigned request_cert:1;        /* request a peer certificate */
         unsigned require_cert:1;        /* require a client certificate */

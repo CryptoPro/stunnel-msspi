@@ -976,9 +976,10 @@ NOEXPORT void ssl_start(CLI *c) {
                 }
             }
 
-            if( cert && !is_pfx && !msspi_set_mycert_options( c->msh, 1, (const uint8_t *)pin, pin ? strlen( pin ) : 0, 1 ) )
+            if( cert && !is_pfx && !msspi_set_mycert_options( c->msh, c->opt->option.silent, (const uint8_t *)pin, pin ? strlen( pin ) : 0, c->opt->option.selftest) )
             {
-                s_log( LOG_ERR, "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\")", cert, pin ? pin : "" );
+                s_log( LOG_ERR, "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\", silent = \"%s\", selftest = \"%s\")",
+                    cert, pin ? pin : "", c->opt->option.silent ? "yes" : "no", c->opt->option.selftest ? "yes" : "no");
                 throw_exception( c, 1 );
             }
         }
@@ -2120,6 +2121,10 @@ else
 }
 
 #else /* standard Unix version */
+
+#ifndef environ
+extern char **environ;
+#endif
 
 NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
     int fd[2], pid;

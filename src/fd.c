@@ -37,7 +37,8 @@
 
 #include "prototypes.h"
 
-#if defined HAVE_PIPE2 && defined HAVE_ACCEPT4
+/* CPRO: bvm-ct3-x86-40 have not SOCK_NONBLOCK */
+#if defined HAVE_PIPE2 && defined HAVE_ACCEPT4 && defined SOCK_NONBLOCK
 #define USE_NEW_LINUX_API 1
 #endif
 

@@ -1665,7 +1665,22 @@ NOEXPORT char *base64(int encode, const char *in, int len) {
 
 #ifndef _WIN32
 #define WINAPI
-#endif
+#else /*_WIN32*/
+BOOL WINAPI
+#ifdef _M_IX86
+_imp__TryAcquireSRWLockExclusive
+(long * lock)
+{
+    return (_interlockedbittestandset(lock, 0) == 0);
+}
+#else /*_M_IX86*/
+__imp_TryAcquireSRWLockExclusive
+(long long * lock)
+{
+    return (_interlockedbittestandset64(lock, 0) == 0);
+}
+#endif /*_M_IX86*/
+#endif /*_WIN32*/
 
 int WINAPI CryptStringToBinaryA( const char * pszString, uint32_t cchString, uint32_t dwFlags, char * pbBinary, uint32_t * pcbBinary, uint32_t * pdwSkip, uint32_t * pdwFlags );
 int WINAPI CryptBinaryToStringA( const char * pbBinary, uint32_t cbBinary, uint32_t dwFlags, char * pszString, uint32_t * pcchString );

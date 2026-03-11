@@ -577,12 +577,14 @@ NOEXPORT void *dummy_thread(void *arg) {
 }
 
 int sthreads_init(void) {
+#if !defined(__APPLE__)
     pthread_t thread_id;
 
     /* this is a workaround for NPTL threads failing to invoke
      * pthread_exit() or pthread_cancel() from a chroot jail */
     if(!pthread_create(&thread_id, NULL, dummy_thread, NULL))
         pthread_join(thread_id, NULL);
+#endif /* !__APPLE__*/
 
     thread_id_init();
     locking_init();

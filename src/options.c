@@ -2121,7 +2121,77 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             s_log( LOG_NOTICE, "%-22s = checkIssuer", "checkIssuer" );
             break;
     }
+
+    /* selftest */
+    switch (cmd)
+    {
+    case CMD_SET_DEFAULTS:
+        section->option.selftest = 1;
+        break;
+    case CMD_SET_COPY:
+        section->option.selftest = new_service_options.option.selftest;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if (strcasecmp(opt, "selftest"))
+            break;
+        if (!strcasecmp(arg, "yes"))
+            section->option.selftest = 1;
+        else if (!strcasecmp(arg, "no"))
+            section->option.selftest = 0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = yes|no selftest before connect",
+            "selftest");
+        break;
+    }
+
+    /* silent */
+    switch (cmd)
+    {
+    case CMD_SET_DEFAULTS:
+        section->option.silent = 1;
+        break;
+    case CMD_SET_COPY:
+        section->option.silent = new_service_options.option.silent;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if (strcasecmp(opt, "silent"))
+            break;
+        if (!strcasecmp(arg, "yes"))
+            section->option.silent = 1;
+        else if (!strcasecmp(arg, "no"))
+            section->option.silent = 0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+#ifndef USE_WIN32
+        if (!new_global_options.option.foreground && !section->option.silent)
+            return "To use this option please add global option 'foreground = yes' or 'foreground = quiet'";
 #endif
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+#ifndef USE_WIN32
+        s_log(LOG_NOTICE, "%-22s = yes|no silent mode (for foreground mode only)",
+#else
+        s_log(LOG_NOTICE, "%-22s = yes|no silent mode",
+#endif
+            "silent");
+        break;
+    }
+#endif /* MSSPISSL */
 
     /* client */
     switch(cmd) {

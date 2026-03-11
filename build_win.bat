@@ -13,7 +13,8 @@ curl -fsSL -o bin64.zip %OPENSSL_URL%bin64.zip || exit /b 1
 
 7z x includes.zip -aoa
 set OPENSSL_INCLUDE=.
-curl -fsSL -o %OPENSSL_INCLUDE%\openssl\applink.c https://raw.githubusercontent.com/deemru/openssl/%OPENSSL_VERSION%/ms/applink.c || exit /b 1
+if not exist %OPENSSL_INCLUDE%\ms mkdir %OPENSSL_INCLUDE%\ms
+curl -fsSL -o %OPENSSL_INCLUDE%\ms\applink.c https://raw.githubusercontent.com/deemru/openssl/%OPENSSL_VERSION%/ms/applink.c || exit /b 1
 
 set INCLUDES=/I%OPENSSL_INCLUDE% /I./src/msspi/third_party/cprocsp/include
 set CFLAGS_CPP=/c /Ox /Os /GL /GF /GS- /Wall /EHa /DMSSPI_USE_MSSPI_CERT %INCLUDES%
