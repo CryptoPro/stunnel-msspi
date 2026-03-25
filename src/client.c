@@ -49,7 +49,17 @@ int RAND_bytes( unsigned char * buf, int num )
 #else
     static int urandom_fd = -1;
     if( urandom_fd < 0 )
-        urandom_fd = open( "/dev/urandom", O_RDONLY | O_CLOEXEC );
+    {
+        int flags = O_RDONLY;
+#ifdef O_CLOEXEC
+        flags |= O_CLOEXEC;
+#endif
+        urandom_fd = open( "/dev/urandom", flags );
+#if !defined(O_CLOEXEC) && defined(FD_CLOEXEC)
+        if( urandom_fd >= 0 )
+            (void)fcntl( urandom_fd, F_SETFD, FD_CLOEXEC );
+#endif
+    }
     if( urandom_fd >= 0 )
     {
         ssize_t n = 0;
