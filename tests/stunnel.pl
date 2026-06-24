@@ -34,6 +34,8 @@ my $srv_cert = '127.0.0.1';
 my $cln_cert_rsa = 'clnRSA';
 my $srv_cert_rsa = 'srvRSA';
 
+my $server_pinconf = '
+pin = 12345678';
 
 # заполнение конфигураций
 
@@ -58,7 +60,7 @@ accept = '.$server_host_name.':'.$client_port;
 
 # сервер INET socket
 my $serverconf_INET = $serverconf_common.'
-cert = '.$servercert_file.'
+cert = '.$servercert_file.$server_pinconf.'
 ;socket = l:TCP_NODELAY=1
 accept = '.$server_host_name.':'.$tunnel_port.'
 verify = 2'; 
@@ -94,7 +96,7 @@ connect = '.$server_host_name.':'.$tunnel_port;
 
 # сервер UNIX socket
 my $serverconf_UNIX = $serverconf_common.'
-cert = '.$srv_cert.'
+cert = '.$srv_cert.$server_pinconf.'
 accept = '.$unix_socket_file;
 
 # клиент UNIX socket

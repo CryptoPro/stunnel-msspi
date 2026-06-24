@@ -62,7 +62,7 @@ my $certmgr = $CproPath . "/bin/" . $arch_suffix . "/certmgr";
     #_RunCmd('Restart csp-daemon', "/etc/init.d/cprocsp restart");
     
     #new certs
-    _RunCmd('MakeCertGOST', $cryptcp . " -creatcert -provtype 81 -silent -rdn \'CN=127.0.0.1\' -cont \'\\\\.\\HDIMAGE\\localhost_cont\' -certusage 1.3.6.1.5.5.7.3.1 -km -dm -ex -ca http://testgost2012.cryptopro.ru/certsrv -enable-install-root");
+    _RunCmd('MakeCertGOST', $cryptcp . " -creatcert -provtype 81 -silent -pin 12345678 -rdn \'CN=127.0.0.1\' -cont \'\\\\.\\HDIMAGE\\localhost_cont\' -certusage 1.3.6.1.5.5.7.3.1 -km -dm -ex -ca http://testgost2012.cryptopro.ru/certsrv -enable-install-root");
     _RunCmd('MakeCertGOST', $cryptcp . " -creatcert -provtype 81 -silent -rdn \'E=cln512ecryptopro.ru, CN=cln512e\' -cont \'\\\\.\\HDIMAGE\\cln512e\' -certusage 1.3.6.1.5.5.7.3.2 -km -dm -both -ca http://testgost2012.cryptopro.ru/certsrv -enable-install-root");
  
     #old certs (могут быть ошибки из-за упоминания о старых сертификатах)
