@@ -147,8 +147,10 @@ void main_init(void) { /* one-time initialization */
 #endif /* NO_OPENSSLOFF */
     if(sthreads_init()) /* initialize critical sections & TLS callbacks */
         fatal("Threads initialization failed");
+#ifdef NO_OPENSSLOFF
     if(ctx_init()) /* initialize shared data for SSL_CTX */
         fatal("SSL_CTX initialization failed");
+#endif /* NO_OPENSSLOFF */
     options_defaults(); /* initialize defaults */
     options_apply(); /* apply the defaults */
 #ifndef USE_FORK
@@ -273,9 +275,11 @@ void main_cleanup(void) {
     /* TODO: force releasing options for references held by killed threads */
 
     /* release shared resources */
+#ifdef NO_OPENSSLOFF
     ctx_cleanup();
     ssl_cleanup();
     crypto_cleanup(); /* no OpenSSL functionality beyond this point */
+#endif /* NO_OPENSSLOFF */
 
     /* disable logging */
 #if 0
