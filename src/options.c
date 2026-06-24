@@ -2123,7 +2123,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             name_list_dup( &section->checkSubject, new_service_options.checkSubject );
             break;
         case CMD_FREE:
-            name_list_free( section->checkSubject );
+            name_list_free( &section->checkSubject );
             break;
         case CMD_INITIALIZE:
             if( section->checkSubject && !section->option.verify_chain && !section->option.verify_peer )
@@ -2154,7 +2154,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             name_list_dup( &section->checkIssuer, new_service_options.checkIssuer );
             break;
         case CMD_FREE:
-            name_list_free( section->checkIssuer );
+            name_list_free( &section->checkIssuer );
             break;
         case CMD_INITIALIZE:
             if( section->checkIssuer && !section->option.verify_chain && !section->option.verify_peer )
