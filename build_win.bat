@@ -22,7 +22,7 @@ set CFLAGS_C=/c /Ox /Os /GL /GF /GS- /W4 /DUSE_MSSPI /DMSSPI_USE_MSSPI_CERT %INC
 set LIBS=crypt32.lib advapi32.lib ws2_32.lib shell32.lib user32.lib gdi32.lib comdlg32.lib
 
 set SRC_CPP=src/msspi/src/msspi.cpp
-set SRC_C=src/client.c src/fd.c src/file.c src/libwrap.c src/log.c src/network.c src/options.c src/protocol.c src/pty.c src/resolver.c src/ssl.c src/sthreads.c src/str.c src/stunnel.c src/tls.c src/ui_win_cli.c src/ui_win_gui.c src/verify.c
+set SRC_C=src/client.c src/fd.c src/file.c src/libwrap.c src/log.c src/network.c src/options.c src/protocol.c src/pty.c src/resolver.c src/sthreads.c src/str.c src/stunnel.c src/tls.c src/ui_win_cli.c src/ui_win_gui.c
 set OBJS=msspi.obj client.obj fd.obj file.obj libwrap.obj log.obj network.obj options.obj protocol.obj pty.obj resolver.obj sthreads.obj str.obj stunnel.obj tls.obj ui_win_gui.obj
 
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS_PATH=%%i
@@ -68,7 +68,7 @@ call "%VCVARSALL%" x64 || exit /b 1
 copy /y bin64\opensslconf.h %OPENSSL_INCLUDE%\openssl\opensslconf.h >nul
 
 cl %CFLAGS_CPP% %SRC_CPP% || exit /b 1
-for %%f in (%SRC_C% src/cron.c) do (
+for %%f in (%SRC_C%) do (
     cl %CFLAGS_C% %%f || exit /b 1
 )
 
