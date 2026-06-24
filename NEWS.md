@@ -1,6 +1,28 @@
 # stunnel change log
 
 
+### Version 5.78, 2026.04.09, urgency: MEDIUM
+* Security bugfixes
+  - OpenSSL DLLs updated to version 3.5.6.
+* Bugfixes
+  - Fixed WIN32 transfer() loop errors with OOB TCP.
+  - Fixed a memory leak introduced in version 5.73.
+  - Build fix for systems without timegm()
+    (thanks to Jose A. Diaz and Shubham Gupta).
+  - Fixed a startup crash when both global (default)
+    and service-level lists of values are configured
+    for an option.
+* Features
+  - Support for zstd and brotli compression with OpenSSL 3.2
+    and TLS 1.2 or older.
+  - WIN32 OpenSSL build with zlib and zstd support.
+  - Support for new "options" parameter values.
+  - Less bloated errors on an invalid configuration file.
+  - Documentation updated from Pod to Pandoc Markdown.
+  - Removed support for OpenSSL versions older than 0.9.8.
+    The final update for the OpenSSL 0.9.7 branch
+    (0.9.7m) was issed on 23 Feb 2007.
+
 ### Version 5.77, 2026.02.17, urgency: MEDIUM
 * Security bugfixes
   - OpenSSL DLLs updated to version 3.5.5.

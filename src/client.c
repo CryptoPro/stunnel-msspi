@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -273,6 +273,7 @@ NOEXPORT int connect_init(CLI *, int);
 NOEXPORT int redirect(CLI *);
 NOEXPORT void print_bound_address(CLI *);
 NOEXPORT void reset(SOCKET, const char *);
+NOEXPORT void check_socket_error(CLI *, SOCKET, const char *);
 
 /* allocate local data structure for the new thread */
 CLI *alloc_client_session(SERVICE_OPTIONS *opt, SOCKET rfd, SOCKET wfd) {
@@ -1492,43 +1493,16 @@ NOEXPORT void transfer(CLI *c) {
 
         /****************************** identify exceptions */
         if(c->sock_rfd->fd==c->sock_wfd->fd) {
-            if((sock_can_rd || sock_can_wr) &&
-                    s_poll_err(c->fds, c->sock_rfd->fd)) {
-                err=get_socket_error(c->sock_rfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "socket fd");
-            }
+            check_socket_error(c, c->sock_rfd->fd, "socket fd");
         } else {
-            if(sock_can_rd && s_poll_err(c->fds, c->sock_rfd->fd)) {
-                err=get_socket_error(c->sock_rfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "socket rfd");
-            }
-            if(sock_can_wr && s_poll_err(c->fds, c->sock_wfd->fd)) {
-                err=get_socket_error(c->sock_wfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "socket wfd");
-            }
+            check_socket_error(c, c->sock_rfd->fd, "socket rfd");
+            check_socket_error(c, c->sock_wfd->fd, "socket wfd");
         }
         if(c->ssl_rfd->fd==c->ssl_wfd->fd) {
-            if((ssl_can_rd || ssl_can_wr) &&
-                    s_poll_err(c->fds, c->ssl_rfd->fd)) {
-                err=get_socket_error(c->ssl_rfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "TLS fd");
-            }
+            check_socket_error(c, c->ssl_rfd->fd, "TLS fd");
         } else {
-            if(ssl_can_rd && s_poll_err(c->fds, c->ssl_rfd->fd)) {
-                err=get_socket_error(c->ssl_rfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "TLS rfd");
-            }
-            if(c->ssl_rfd->fd!=c->ssl_wfd->fd &&
-                    ssl_can_wr && s_poll_err(c->fds, c->ssl_wfd->fd)) {
-                err=get_socket_error(c->ssl_wfd->fd);
-                if(err)
-                    log_error(LOG_INFO, err, "TLS wfd");
-            }
+            check_socket_error(c, c->ssl_rfd->fd, "TLS rfd");
+            check_socket_error(c, c->ssl_wfd->fd, "TLS wfd");
         }
 
         /****************************** hangups without read or write */
@@ -2608,7 +2582,8 @@ NOEXPORT void print_bound_address(CLI *c) {
 #endif
 }
 
-NOEXPORT void reset(SOCKET fd, const char *txt) { /* set lingering on a socket */
+/* set lingering on a socket */
+NOEXPORT void reset(SOCKET fd, const char *txt) {
     struct linger l;
 
     s_log(LOG_DEBUG, "%s reset (FD=%ld)", txt, (long)fd);
@@ -2617,8 +2592,26 @@ NOEXPORT void reset(SOCKET fd, const char *txt) { /* set lingering on a socket *
     if(setsockopt(fd, SOL_SOCKET, SO_LINGER, (void *)&l, sizeof l)) {
         int err=get_last_socket_error();
         char *message=str_printf("setsockopt(SO_LINGER) on %s", txt);
+
         log_error(LOG_INFO, err, message);
         str_free(message);
+    }
+}
+
+NOEXPORT void check_socket_error(CLI *c, SOCKET fd, const char *name) {
+    if(s_poll_err(c->fds, fd)) {
+        int err=get_socket_error(fd);
+
+        if(!err) {
+            s_log(LOG_DEBUG, "Spurious s_poll exception on %s", name);
+        } else if(err==S_EWOULDBLOCK || err==S_EAGAIN) {
+            log_error(LOG_DEBUG, err, name);
+        } else {
+            log_error(LOG_ERR, err, name);
+            /* throwing an exception here truncated connections
+             * in stunnel versions 4.34 - 5.08 */
+            /* throw_exception(c, 1); */
+        }
     }
 }
 

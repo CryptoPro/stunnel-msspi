@@ -1,1270 +1,978 @@
-<?xml version="1.0" ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
 <head>
-<title>stunnel TLS Proxy</title>
-<meta http-equiv="content-type" content="text/html; charset=utf-8" />
-<link rev="made" href="mailto:root@localhost" />
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>stunnel TLS Proxy</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 72em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
 </head>
-
-<body id="_podtop_">
-<table border="0" width="100%" cellspacing="0" cellpadding="3">
-<tr><td class="_podblock_" style="background-color: #cccccc; color: #000" valign="middle">
-<big><strong><span class="_podblock_">&nbsp;stunnel TLS Proxy</span></strong></big>
-</td></tr>
-</table>
-
-
-
-<ul id="index">
-  <li><a href="#NAME">NAME</a></li>
-  <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
-  <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
-  <li><a href="#OPTIONS">OPTIONS</a></li>
-  <li><a href="#CONFIGURATION-FILE">CONFIGURATION FILE</a>
-    <ul>
-      <li><a href="#GLOBAL-OPTIONS">GLOBAL OPTIONS</a></li>
-      <li><a href="#SERVICE-LEVEL-OPTIONS">SERVICE-LEVEL OPTIONS</a></li>
-    </ul>
-  </li>
-  <li><a href="#RETURN-VALUE">RETURN VALUE</a></li>
-  <li><a href="#SIGNALS">SIGNALS</a></li>
-  <li><a href="#EXAMPLES">EXAMPLES</a></li>
-  <li><a href="#NOTES">NOTES</a>
-    <ul>
-      <li><a href="#RESTRICTIONS">RESTRICTIONS</a></li>
-      <li><a href="#INETD-MODE">INETD MODE</a></li>
-      <li><a href="#CERTIFICATES">CERTIFICATES</a></li>
-      <li><a href="#RANDOMNESS">RANDOMNESS</a></li>
-      <li><a href="#DH-PARAMETERS">DH PARAMETERS</a></li>
-    </ul>
-  </li>
-  <li><a href="#FILES">FILES</a></li>
-  <li><a href="#BUGS">BUGS</a></li>
-  <li><a href="#SEE-ALSO">SEE ALSO</a></li>
-  <li><a href="#AUTHOR">AUTHOR</a></li>
+<body>
+<header id="title-block-header">
+<h1 class="title">stunnel TLS Proxy</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#name" id="toc-name">NAME</a></li>
+<li><a href="#synopsis" id="toc-synopsis">SYNOPSIS</a></li>
+<li><a href="#description" id="toc-description">DESCRIPTION</a></li>
+<li><a href="#options" id="toc-options">OPTIONS</a></li>
+<li><a href="#configuration-file"
+id="toc-configuration-file">CONFIGURATION FILE</a>
+<ul>
+<li><a href="#global-options" id="toc-global-options">GLOBAL
+OPTIONS</a></li>
+<li><a href="#service-level-options"
+id="toc-service-level-options">SERVICE-LEVEL OPTIONS</a></li>
+</ul></li>
+<li><a href="#return-value" id="toc-return-value">RETURN VALUE</a></li>
+<li><a href="#signals" id="toc-signals">SIGNALS</a></li>
+<li><a href="#examples" id="toc-examples">EXAMPLES</a></li>
+<li><a href="#notes" id="toc-notes">NOTES</a>
+<ul>
+<li><a href="#restrictions" id="toc-restrictions">RESTRICTIONS</a></li>
+<li><a href="#inetd-mode" id="toc-inetd-mode">INETD MODE</a></li>
+<li><a href="#certificates" id="toc-certificates">CERTIFICATES</a></li>
+<li><a href="#randomness" id="toc-randomness">RANDOMNESS</a></li>
+<li><a href="#dh-parameters" id="toc-dh-parameters">DH
+PARAMETERS</a></li>
+</ul></li>
+<li><a href="#files" id="toc-files">FILES</a></li>
+<li><a href="#bugs" id="toc-bugs">BUGS</a></li>
+<li><a href="#see-also" id="toc-see-also">SEE ALSO</a></li>
+<li><a href="#author" id="toc-author">AUTHOR</a></li>
 </ul>
-
-<a href="#_podtop_"><h1 id="NAME">NAME</h1></a>
-
+</nav>
+<h1 id="name">NAME</h1>
 <p>stunnel - TLS offloading and load-balancing proxy</p>
-
-<a href="#_podtop_"><h1 id="SYNOPSIS">SYNOPSIS</h1></a>
-
-<dl>
-
-<dt id="Unix"><b>Unix:</b></dt>
-<dd>
-
-<p><b>stunnel</b> [<span style="white-space: nowrap;">FILE</span>] | <span style="white-space: nowrap;">-fd N</span> | <span style="white-space: nowrap;">-help</span> | <span style="white-space: nowrap;">-version</span> | <span style="white-space: nowrap;">-sockets</span> | <span style="white-space: nowrap;">-options</span></p>
-
-</dd>
-<dt id="WIN32"><b>WIN32:</b></dt>
-<dd>
-
-<p><b>stunnel</b> [ [ <span style="white-space: nowrap;">-install</span> | <span style="white-space: nowrap;">-uninstall</span> | <span style="white-space: nowrap;">-start</span> | <span style="white-space: nowrap;">-stop</span> | <span style="white-space: nowrap;">-reload</span> | <span style="white-space: nowrap;">-reopen</span> | <span style="white-space: nowrap;">-exit</span> ] [<span style="white-space: nowrap;">-quiet</span>] [<span style="white-space: nowrap;">FILE</span>] ] | <span style="white-space: nowrap;">-help</span> | <span style="white-space: nowrap;">-version</span> | <span style="white-space: nowrap;">-sockets</span> | <span style="white-space: nowrap;">-options</span></p>
-
-</dd>
-</dl>
-
-<a href="#_podtop_"><h1 id="DESCRIPTION">DESCRIPTION</h1></a>
-
-<p>The <b>stunnel</b> program is designed to work as <i>TLS</i> encryption wrapper between remote clients and local (<i>inetd</i>-startable) or remote servers. The concept is that having non-TLS aware daemons running on your system you can easily set them up to communicate with clients over secure <i>TLS</i> channels.</p>
-
-<p><b>stunnel</b> can be used to add <i>TLS</i> functionality to commonly used <i>Inetd</i> daemons like POP-2, POP-3, and IMAP servers, to standalone daemons like NNTP, SMTP and HTTP, and in tunneling PPP over network sockets without changes to the source code.</p>
-
-<p>This product includes cryptographic software written by Eric Young (eay@cryptsoft.com)</p>
-
-<a href="#_podtop_"><h1 id="OPTIONS">OPTIONS</h1></a>
-
-<dl>
-
-<dt id="FILE"><b>FILE</b></dt>
-<dd>
-
-<p>Use specified configuration file</p>
-
-</dd>
-<dt id="fd-N-Unix-only"><b>-fd N</b> (Unix only)</dt>
-<dd>
-
-<p>Read the config file from specified file descriptor</p>
-
-</dd>
-<dt id="help"><b>-help</b></dt>
-<dd>
-
-<p>Print <b>stunnel</b> help menu</p>
-
-</dd>
-<dt id="version"><b>-version</b></dt>
-<dd>
-
-<p>Print <b>stunnel</b> version and compile time defaults</p>
-
-</dd>
-<dt id="sockets"><b>-sockets</b></dt>
-<dd>
-
-<p>Print default socket options</p>
-
-</dd>
-<dt id="options"><b>-options</b></dt>
-<dd>
-
-<p>Print supported TLS options</p>
-
-</dd>
-<dt id="install-Windows-NT-and-later-only"><b>-install</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Install NT Service</p>
-
-</dd>
-<dt id="uninstall-Windows-NT-and-later-only"><b>-uninstall</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Uninstall NT Service</p>
-
-</dd>
-<dt id="start-Windows-NT-and-later-only"><b>-start</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Start NT Service</p>
-
-</dd>
-<dt id="stop-Windows-NT-and-later-only"><b>-stop</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Stop NT Service</p>
-
-</dd>
-<dt id="reload-Windows-NT-and-later-only"><b>-reload</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Reload the configuration file of the running NT Service</p>
-
-</dd>
-<dt id="reopen-Windows-NT-and-later-only"><b>-reopen</b> (Windows NT and later only)</dt>
-<dd>
-
-<p>Reopen the log file of the running NT Service</p>
-
-</dd>
-<dt id="exit-Win32-only"><b>-exit</b> (Win32 only)</dt>
-<dd>
-
-<p>Exit an already started stunnel</p>
-
-</dd>
-<dt id="quiet-Win32-only"><b>-quiet</b> (Win32 only)</dt>
-<dd>
-
-<p>Don&#39;t display any message boxes</p>
-
-</dd>
-</dl>
-
-<a href="#_podtop_"><h1 id="CONFIGURATION-FILE">CONFIGURATION FILE</h1></a>
-
+<h1 id="synopsis">SYNOPSIS</h1>
+<ul>
+<li><p><strong>Unix:</strong> <strong>stunnel</strong>
+[<code>FILE</code>] | <code>-fd N</code> | <code>-help</code> |
+<code>-version</code> | <code>-sockets</code> |
+<code>-options</code></p></li>
+<li><p><strong>WIN32:</strong> <strong>stunnel</strong> [ [
+<code>-install</code> | <code>-uninstall</code> | <code>-start</code> |
+<code>-stop</code> | <code>-reload</code> | <code>-reopen</code> |
+<code>-exit</code> ] [<code>-quiet</code>] [<code>FILE</code>] ] |
+<code>-help</code> | <code>-version</code> | <code>-sockets</code> |
+<code>-options</code></p></li>
+</ul>
+<h1 id="description">DESCRIPTION</h1>
+<p>The <strong>stunnel</strong> program is designed to work as
+<em>TLS</em> encryption wrapper between remote clients and local
+(<em>inetd</em>-startable) or remote servers. The concept is that having
+non-TLS aware daemons running on your system you can easily set them up
+to communicate with clients over secure <em>TLS</em> channels.</p>
+<p><strong>stunnel</strong> can be used to add <em>TLS</em>
+functionality to commonly used <em>Inetd</em> daemons like POP-2, POP-3,
+and IMAP servers, to standalone daemons like NNTP, SMTP and HTTP, and in
+tunneling PPP over network sockets without changes to the source
+code.</p>
+<p>This product includes cryptographic software written by Eric Young
+(eay@cryptsoft.com)</p>
+<h1 id="options">OPTIONS</h1>
+<ul>
+<li><p><strong>FILE</strong></p>
+<p>Use specified configuration file</p></li>
+<li><p><strong>-fd N</strong> (Unix only)</p>
+<p>Read the config file from specified file descriptor</p></li>
+<li><p><strong>-help</strong></p>
+<p>Print <strong>stunnel</strong> help menu</p></li>
+<li><p><strong>-version</strong></p>
+<p>Print <strong>stunnel</strong> version and compile time
+defaults</p></li>
+<li><p><strong>-sockets</strong></p>
+<p>Print default socket options</p></li>
+<li><p><strong>-options</strong></p>
+<p>Print supported TLS options</p></li>
+<li><p><strong>-install</strong> (Windows NT and later only)</p>
+<p>Install NT Service</p></li>
+<li><p><strong>-uninstall</strong> (Windows NT and later only)</p>
+<p>Uninstall NT Service</p></li>
+<li><p><strong>-start</strong> (Windows NT and later only)</p>
+<p>Start NT Service</p></li>
+<li><p><strong>-stop</strong> (Windows NT and later only)</p>
+<p>Stop NT Service</p></li>
+<li><p><strong>-reload</strong> (Windows NT and later only)</p>
+<p>Reload the configuration file of the running NT Service</p></li>
+<li><p><strong>-reopen</strong> (Windows NT and later only)</p>
+<p>Reopen the log file of the running NT Service</p></li>
+<li><p><strong>-exit</strong> (Win32 only)</p>
+<p>Exit an already started stunnel</p></li>
+<li><p><strong>-quiet</strong> (Win32 only)</p>
+<p>Don’t display any message boxes</p></li>
+</ul>
+<h1 id="configuration-file">CONFIGURATION FILE</h1>
 <p>Each line of the configuration file can be either:</p>
-
 <ul>
-
-<li><p>An empty line (ignored).</p>
-
-</li>
-<li><p>A comment starting with &#39;;&#39; (ignored).</p>
-
-</li>
-<li><p>An &#39;option_name = option_value&#39; pair.</p>
-
-</li>
-<li><p>&#39;[service_name]&#39; indicating a start of a service definition.</p>
-
-</li>
+<li><p>An empty line (ignored).</p></li>
+<li><p>A comment starting with ‘;’ (ignored).</p></li>
+<li><p>An ‘option_name = option_value’ pair.</p></li>
+<li><p>‘[service_name]’ indicating a start of a service
+definition.</p></li>
 </ul>
-
 <p>An address parameter of an option may be either:</p>
-
 <ul>
-
-<li><p>A port number.</p>
-
-</li>
-<li><p>A colon-separated pair of IP address (either IPv4, IPv6, or domain name) and port number.</p>
-
-</li>
-<li><p>A Unix socket path (Unix only).</p>
-
-</li>
+<li><p>A port number.</p></li>
+<li><p>A colon-separated pair of IP address (either IPv4, IPv6, or
+domain name) and port number.</p></li>
+<li><p>A Unix socket path (Unix only).</p></li>
 </ul>
-
-<h2 id="GLOBAL-OPTIONS">GLOBAL OPTIONS</h2>
-
-<dl>
-
-<dt id="chroot-DIRECTORY-Unix-only"><b>chroot</b> = DIRECTORY (Unix only)</dt>
-<dd>
-
-<p>directory to chroot <b>stunnel</b> process</p>
-
-<p><b>chroot</b> keeps <b>stunnel</b> in a chrooted jail. <i>CApath</i>, <i>CRLpath</i>, <i>pid</i> and <i>exec</i> are located inside the jail and the patches have to be relative to the directory specified with <b>chroot</b>.</p>
-
-<p>Several functions of the operating system also need their files to be located within the chroot jail, e.g.:</p>
-
+<h2 id="global-options">GLOBAL OPTIONS</h2>
 <ul>
-
-<li><p>Delayed resolver typically needs /etc/nsswitch.conf and /etc/resolv.conf.</p>
-
-</li>
-<li><p>Local time in log files needs /etc/timezone.</p>
-
-</li>
-<li><p>Some other functions may need devices, e.g. /dev/zero or /dev/null.</p>
-
-</li>
-</ul>
-
-</dd>
-<dt id="compression-deflate-zlib"><b>compression</b> = deflate | zlib</dt>
-<dd>
-
+<li><p><strong>chroot</strong> = DIRECTORY (Unix only)</p>
+<p>directory to chroot <strong>stunnel</strong> process</p>
+<p><strong>chroot</strong> keeps <strong>stunnel</strong> in a chrooted
+jail. <em>CApath</em>, <em>CRLpath</em>, <em>pid</em> and <em>exec</em>
+are located inside the jail and the patches have to be relative to the
+directory specified with <strong>chroot</strong>.</p>
+<p>Several functions of the operating system also need their files to be
+located within the chroot jail, e.g.:</p>
+<ul>
+<li><p>Delayed resolver typically needs /etc/nsswitch.conf and
+/etc/resolv.conf.</p></li>
+<li><p>Local time in log files needs /etc/timezone.</p></li>
+<li><p>Some other functions may need devices, e.g. /dev/zero or
+/dev/null.</p></li>
+</ul></li>
+<li><p><strong>compression</strong> = deflate | zlib | zstd | brotli</p>
 <p>select data compression algorithm</p>
-
 <p>default: no compression</p>
-
-<p>Deflate is the standard compression method as described in RFC 1951.</p>
-
-</dd>
-<dt id="debug-FACILITY.-LEVEL"><b>debug</b> = [FACILITY.]LEVEL</dt>
-<dd>
-
+<p>Data compression is available only for TLS 1.2 and earlier. Requires
+lowering <strong>securityLevel</strong> to 1 when compiled with
+<strong>OpenSSL 1.1.0</strong> and later.</p>
+<p>The zlib, zstd, and brotli algorithms are disabled in the default
+OpenSSL configuration.</p>
+<p>The zstd and brotli algorithms were added in <strong>OpenSSL
+3.2</strong>.</p>
+<p>Data compression poses a risk in applications that allow an attacker
+to inject chosen plaintext.</p>
+<p>Deflate is the standard compression method as described in RFC
+1951.</p>
+<p><strong>Warning</strong>: TLS compression can enable
+plaintext-recovery attacks, such as CRIME, when attacker-controlled data
+is compressed together with secret material.</p></li>
+<li><p><strong>debug</strong> = [FACILITY.]LEVEL</p>
 <p>debugging level</p>
-
-<p>Level is one of the syslog level names or numbers emerg (0), alert (1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7). All logs for the specified level and all levels numerically less than it will be shown.</p>
-
-<p>The <i>debug = debug</i> (or the equivalent &lt;debug = 7&gt;) level produces for the most verbose log output. This logging level is only meant to be understood by stunnel developers, and not by users. Please either use the debug level when requested to do so by an stunnel developer, or when you intend to get confused.</p>
-
+<p>Level is one of the syslog level names or numbers emerg (0), alert
+(1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7).
+All logs for the specified level and all levels numerically less than it
+will be shown.</p>
+<p>The <em>debug = debug</em> (or the equivalent &lt;debug = 7&gt;)
+level produces for the most verbose log output. This logging level is
+only meant to be understood by stunnel developers, and not by users.
+Please either use the debug level when requested to do so by an stunnel
+developer, or when you intend to get confused.</p>
 <p>The default logging level is notice (5).</p>
-
-<p>The syslog &#39;daemon&#39; facility will be used unless a facility name is supplied. (Facilities are not supported on Win32.)</p>
-
-<p>Case is ignored for both facilities and levels.</p>
-
-</dd>
-<dt id="EGD-EGD_PATH-Unix-only"><b>EGD</b> = EGD_PATH (Unix only)</dt>
-<dd>
-
+<p>The syslog ‘daemon’ facility will be used unless a facility name is
+supplied. (Facilities are not supported on Win32.)</p>
+<p>Case is ignored for both facilities and levels.</p></li>
+<li><p><strong>EGD</strong> = EGD_PATH (Unix only)</p>
 <p>path to Entropy Gathering Daemon socket</p>
-
-<p>Entropy Gathering Daemon socket to use to feed the <b>OpenSSL</b> random number generator.</p>
-
-</dd>
-<dt id="engine-auto-ENGINE_ID"><b>engine</b> = auto | ENGINE_ID</dt>
-<dd>
-
+<p>Entropy Gathering Daemon socket to use to feed the
+<strong>OpenSSL</strong> random number generator.</p></li>
+<li><p><strong>engine</strong> = auto | ENGINE_ID</p>
 <p>select hardware or software cryptographic engine</p>
-
 <p>default: software-only cryptography</p>
-
-<p>See Examples section for an engine configuration to use the certificate and the corresponding private key from a cryptographic device.</p>
-
-</dd>
-<dt id="engineCtrl-COMMAND-:PARAMETER"><b>engineCtrl</b> = COMMAND[:PARAMETER]</dt>
-<dd>
-
-<p>control hardware engine</p>
-
-</dd>
-<dt id="engineDefault-TASK_LIST"><b>engineDefault</b> = TASK_LIST</dt>
-<dd>
-
+<p>See Examples section for an engine configuration to use the
+certificate and the corresponding private key from a cryptographic
+device.</p></li>
+<li><p><strong>engineCtrl</strong> = COMMAND[:PARAMETER]</p>
+<p>control hardware engine</p></li>
+<li><p><strong>engineDefault</strong> = TASK_LIST</p>
 <p>set OpenSSL tasks delegated to the current engine</p>
-
-<p>The parameter specifies a comma-separated list of task to be delegated to the current engine.</p>
-
-<p>The following tasks may be available, if supported by the engine: ALL, RSA, DSA, ECDH, ECDSA, DH, RAND, CIPHERS, DIGESTS, PKEY, PKEY_CRYPTO, PKEY_ASN1.</p>
-
-</dd>
-<dt id="fips-yes-no"><b>fips</b> = yes | no</dt>
-<dd>
-
+<p>The parameter specifies a comma-separated list of task to be
+delegated to the current engine.</p>
+<p>The following tasks may be available, if supported by the engine:
+ALL, RSA, DSA, ECDH, ECDSA, DH, RAND, CIPHERS, DIGESTS, PKEY,
+PKEY_CRYPTO, PKEY_ASN1.</p></li>
+<li><p><strong>fips</strong> = yes | no</p>
 <p>enable or disable FIPS 140-2 mode.</p>
-
-<p>This option allows you to disable entering FIPS mode if <b>stunnel</b> was compiled with FIPS 140-2 support.</p>
-
-<p>default: no (since version 5.00)</p>
-
-</dd>
-<dt id="foreground-yes-quiet-no-Unix-only"><b>foreground</b> = yes | quiet | no (Unix only)</dt>
-<dd>
-
+<p>This option allows you to disable entering FIPS mode if
+<strong>stunnel</strong> was compiled with FIPS 140-2 support.</p>
+<p>default: no (since version 5.00)</p></li>
+<li><p><strong>foreground</strong> = yes | quiet | no (Unix only)</p>
 <p>foreground mode</p>
-
-<p>Stay in foreground (don&#39;t fork).</p>
-
-<p>With the <i>yes</i> parameter it also logs to stderr in addition to the destinations specified with <i>syslog</i> and <i>output</i>.</p>
-
-<p>default: background in daemon mode</p>
-
-</dd>
-<dt id="iconActive-ICON_FILE-GUI-only"><b>iconActive</b> = ICON_FILE (GUI only)</dt>
-<dd>
-
+<p>Stay in foreground (don’t fork).</p>
+<p>With the <em>yes</em> parameter it also logs to stderr in addition to
+the destinations specified with <em>syslog</em> and <em>output</em>.</p>
+<p>default: background in daemon mode</p></li>
+<li><p><strong>iconActive</strong> = ICON_FILE (GUI only)</p>
 <p>GUI icon to be displayed when there are established connections</p>
-
-<p>On Windows platform the parameter should be an .ico file containing a 16x16 pixel image.</p>
-
-</dd>
-<dt id="iconError-ICON_FILE-GUI-only"><b>iconError</b> = ICON_FILE (GUI only)</dt>
-<dd>
-
+<p>On Windows platform the parameter should be an .ico file containing a
+16x16 pixel image.</p></li>
+<li><p><strong>iconError</strong> = ICON_FILE (GUI only)</p>
 <p>GUI icon to be displayed when no valid configuration is loaded</p>
-
-<p>On Windows platform the parameter should be an .ico file containing a 16x16 pixel image.</p>
-
-</dd>
-<dt id="iconIdle-ICON_FILE-GUI-only"><b>iconIdle</b> = ICON_FILE (GUI only)</dt>
-<dd>
-
-<p>GUI icon to be displayed when there are no established connections</p>
-
-<p>On Windows platform the parameter should be an .ico file containing a 16x16 pixel image.</p>
-
-</dd>
-<dt id="log-append-overwrite"><b>log</b> = append | overwrite</dt>
-<dd>
-
+<p>On Windows platform the parameter should be an .ico file containing a
+16x16 pixel image.</p></li>
+<li><p><strong>iconIdle</strong> = ICON_FILE (GUI only)</p>
+<p>GUI icon to be displayed when there are no established
+connections</p>
+<p>On Windows platform the parameter should be an .ico file containing a
+16x16 pixel image.</p></li>
+<li><p><strong>log</strong> = append | overwrite</p>
 <p>log file handling</p>
-
-<p>This option allows you to choose whether the log file (specified with the <i>output</i> option) is appended or overwritten when opened or re-opened.</p>
-
-<p>default: append</p>
-
-</dd>
-<dt id="output-FILE"><b>output</b> = FILE</dt>
-<dd>
-
+<p>This option allows you to choose whether the log file (specified with
+the <em>output</em> option) is appended or overwritten when opened or
+re-opened.</p>
+<p>default: append</p></li>
+<li><p><strong>output</strong> = FILE</p>
 <p>append log messages to a file</p>
-
-<p>/dev/stdout device can be used to send log messages to the standard output (for example to log them with daemontools splogger).</p>
-
-</dd>
-<dt id="pid-FILE-Unix-only"><b>pid</b> = FILE (Unix only)</dt>
-<dd>
-
+<p>/dev/stdout device can be used to send log messages to the standard
+output (for example to log them with daemontools splogger).</p></li>
+<li><p><strong>pid</strong> = FILE (Unix only)</p>
 <p>pid file location</p>
-
 <p>If the argument is empty, then no pid file will be created.</p>
-
-<p><i>pid</i> path is relative to the <i>chroot</i> directory if specified.</p>
-
-</dd>
-<dt id="provider-PROVIDER_ID"><b>provider</b> = PROVIDER_ID</dt>
-<dd>
-
-<p>Specifies the identifier of the provider to be used. PROVIDER_ID is a unique identifier referring to a specific cryptographic service provider.</p>
-
-<p>This option requires OpenSSL 3.0 or later.</p>
-
-</dd>
-<dt id="providerParameter-PROVIDER_ID:PARAMETER-VALUE"><b>providerParameter</b> = PROVIDER_ID:PARAMETER=VALUE</dt>
-<dd>
-
-<p>Sets a specific parameter for the given provider. PROVIDER_ID identifies the provider, PARAMETER is the parameter name, and VALUE is its value. This option allows customization of the selected cryptographic service provider&#39;s configuration.</p>
-
-<p>This option requires OpenSSL 3.5 or later.</p>
-
-</dd>
-<dt id="RNDbytes-BYTES"><b>RNDbytes</b> = BYTES</dt>
-<dd>
-
-<p>bytes to read from random seed files</p>
-
-</dd>
-<dt id="RNDfile-FILE"><b>RNDfile</b> = FILE</dt>
-<dd>
-
+<p><em>pid</em> path is relative to the <em>chroot</em> directory if
+specified.</p></li>
+<li><p><strong>provider</strong> = PROVIDER_ID</p>
+<p>Specifies the identifier of the provider to be used. PROVIDER_ID is a
+unique identifier referring to a specific cryptographic service
+provider.</p>
+<p>This option requires OpenSSL 3.0 or later.</p></li>
+<li><p><strong>providerParameter</strong> =
+PROVIDER_ID:PARAMETER=VALUE</p>
+<p>Sets a specific parameter for the given provider. PROVIDER_ID
+identifies the provider, PARAMETER is the parameter name, and VALUE is
+its value. This option allows customization of the selected
+cryptographic service provider’s configuration.</p>
+<p>This option requires OpenSSL 3.5 or later.</p></li>
+<li><p><strong>RNDbytes</strong> = BYTES</p>
+<p>bytes to read from random seed files</p></li>
+<li><p><strong>RNDfile</strong> = FILE</p>
 <p>path to file with random seed data</p>
-
-<p>The OpenSSL library will use data from this file first to seed the random number generator.</p>
-
-</dd>
-<dt id="RNDoverwrite-yes-no"><b>RNDoverwrite</b> = yes | no</dt>
-<dd>
-
+<p>The OpenSSL library will use data from this file first to seed the
+random number generator.</p></li>
+<li><p><strong>RNDoverwrite</strong> = yes | no</p>
 <p>overwrite the random seed files with new random data</p>
-
-<p>default: yes</p>
-
-</dd>
-<dt id="service-SERVICE-Unix-only"><b>service</b> = SERVICE (Unix only)</dt>
-<dd>
-
+<p>default: yes</p></li>
+<li><p><strong>service</strong> = SERVICE (Unix only)</p>
 <p>stunnel service name</p>
-
-<p>The specified service name is used for syslog and as the <i>inetd</i> mode service name for TCP Wrappers. While this option can technically be specified in the service sections, it is only useful in global options.</p>
-
-<p>default: stunnel</p>
-
-</dd>
-<dt id="setEnv-VAR_NAME-VALUE"><b>setEnv</b> = VAR_NAME=VALUE</dt>
-<dd>
-
-<p>Change or add an environment variable for child processes. If VAR_NAME already exists, its value will be updated; otherwise, a new variable will be created. This modification applies only to spawned child processes and does not affect the current environment.</p>
-
-</dd>
-<dt id="syslog-yes-no-Unix-only"><b>syslog</b> = yes | no (Unix only)</dt>
-<dd>
-
+<p>The specified service name is used for syslog and as the
+<em>inetd</em> mode service name for TCP Wrappers. While this option can
+technically be specified in the service sections, it is only useful in
+global options.</p>
+<p>default: stunnel</p></li>
+<li><p><strong>setEnv</strong> = VAR_NAME=VALUE</p>
+<p>Change or add an environment variable for child processes. If
+VAR_NAME already exists, its value will be updated; otherwise, a new
+variable will be created. This modification applies only to spawned
+child processes and does not affect the current environment.</p></li>
+<li><p><strong>syslog</strong> = yes | no (Unix only)</p>
 <p>enable logging via syslog</p>
-
-<p>default: yes</p>
-
-</dd>
-<dt id="taskbar-yes-no-WIN32-only"><b>taskbar</b> = yes | no (WIN32 only)</dt>
-<dd>
-
+<p>default: yes</p></li>
+<li><p><strong>taskbar</strong> = yes | no (WIN32 only)</p>
 <p>enable the taskbar icon</p>
-
-<p>default: yes</p>
-
-</dd>
-</dl>
-
-<h2 id="SERVICE-LEVEL-OPTIONS">SERVICE-LEVEL OPTIONS</h2>
-
-<p>Each configuration section begins with a service name in square brackets. The service name is used for libwrap (TCP Wrappers) access control and lets you distinguish <b>stunnel</b> services in your log files.</p>
-
-<p>Note that if you wish to run <b>stunnel</b> in <i>inetd</i> mode (where it is provided a network socket by a server such as <i>inetd</i>, <i>xinetd</i>, or <i>tcpserver</i>) then you should read the section entitled <i>INETD MODE</i> below.</p>
-
-<dl>
-
-<dt id="accept-HOST:-PORT"><b>accept</b> = [HOST:]PORT</dt>
-<dd>
-
+<p>default: yes</p></li>
+</ul>
+<h2 id="service-level-options">SERVICE-LEVEL OPTIONS</h2>
+<p>Each configuration section begins with a service name in square
+brackets. The service name is used for libwrap (TCP Wrappers) access
+control and lets you distinguish <strong>stunnel</strong> services in
+your log files.</p>
+<p>Note that if you wish to run <strong>stunnel</strong> in
+<em>inetd</em> mode (where it is provided a network socket by a server
+such as <em>inetd</em>, <em>xinetd</em>, or <em>tcpserver</em>) then you
+should read the section entitled <em>INETD MODE</em> below.</p>
+<ul>
+<li><p><strong>accept</strong> = [HOST:]PORT</p>
 <p>accept connections on specified address</p>
-
-<p>If no host specified, defaults to all IPv4 addresses for the local host.</p>
-
+<p>If no host specified, defaults to all IPv4 addresses for the local
+host.</p>
 <p>To listen on all IPv6 addresses use:</p>
-
-<pre><code>accept = :::PORT</code></pre>
-
-</dd>
-<dt id="CAengine-ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER"><b>CAengine</b> = ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER</dt>
-<dd>
-
+<pre><code>accept = :::PORT</code></pre></li>
+<li><p><strong>CAengine</strong> =
+ENGINE-SPECIFIC_CA_CERTIFICATE_IDENTIFIER</p>
 <p>load a trusted CA certificate from an engine</p>
-
-<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
-
-<p>Multiple <i>CAengine</i> options are allowed in a single service section.</p>
-
-<p>Currently supported engines: pkcs11, cng.</p>
-
-</dd>
-<dt id="CApath-CA_DIRECTORY"><b>CApath</b> = CA_DIRECTORY</dt>
-<dd>
-
+<p>The loaded CA certificates will be used with the <em>verifyChain</em>
+and <em>verifyPeer</em> options.</p>
+<p>Multiple <em>CAengine</em> options are allowed in a single service
+section.</p>
+<p>Currently supported engines: pkcs11, cng.</p></li>
+<li><p><strong>CApath</strong> = CA_DIRECTORY</p>
 <p>load trusted CA certificates from a directory</p>
-
-<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options. Note that the certificates in this directory should be named XXXXXXXX.0 where XXXXXXXX is the hash value of the DER encoded subject of the cert.</p>
-
-<p>This parameter can also be used to provide the root CA certificate needed to validate OCSP stapling in server mode.</p>
-
-<p>The hash algorithm has been changed in <b>OpenSSL 1.0.0</b>. It is required to c_rehash the directory on upgrade from <b>OpenSSL 0.x.x</b> to <b>OpenSSL 1.x.x</b> or later.</p>
-
-<p><i>CApath</i> path is relative to the <i>chroot</i> directory if specified.</p>
-
-</dd>
-<dt id="CAfile-CA_FILE"><b>CAfile</b> = CA_FILE</dt>
-<dd>
-
+<p>The loaded CA certificates will be used with the <em>verifyChain</em>
+and <em>verifyPeer</em> options. Note that the certificates in this
+directory should be named XXXXXXXX.0 where XXXXXXXX is the hash value of
+the DER encoded subject of the cert.</p>
+<p>This parameter can also be used to provide the root CA certificate
+needed to validate OCSP stapling in server mode.</p>
+<p>The hash algorithm has been changed in <strong>OpenSSL
+1.0.0</strong>. It is required to c_rehash the directory on upgrade from
+<strong>OpenSSL 0.x.x</strong> to <strong>OpenSSL 1.x.x</strong> or
+later.</p>
+<p><em>CApath</em> path is relative to the <em>chroot</em> directory if
+specified.</p></li>
+<li><p><strong>CAfile</strong> = CA_FILE</p>
 <p>load trusted CA certificates from a file</p>
-
-<p>The loaded CA certificates will be used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
-
-<p>This parameter can also be used to provide the root CA certificate needed to validate OCSP stapling in server mode.</p>
-
-</dd>
-<dt id="CAstore-URI_CA"><b>CAstore</b> = URI_CA</dt>
-<dd>
-
+<p>The loaded CA certificates will be used with the <em>verifyChain</em>
+and <em>verifyPeer</em> options.</p>
+<p>This parameter can also be used to provide the root CA certificate
+needed to validate OCSP stapling in server mode.</p></li>
+<li><p><strong>CAstore</strong> = URI_CA</p>
 <p>load trusted CA certificates from a resource specified by a URI</p>
-
-<p>This option allows loading CA certificates from an external source supported by the <i>OSSL_STORE</i> framework, such as a PKCS#11 module (e.g., hardware token), the system certificate store, or a remote resource.</p>
-
-<p>This option can be used independently of <i>CAfile</i> and <i>CAdir</i>, and similarly provides certificates used by <i>verifyChain</i> or <i>verifyPeer</i>, as well as for validating OCSP stapling in server mode.</p>
-
-<p>This option requires OpenSSL 3.0 or later.</p>
-
-</dd>
-<dt id="cert-CERT_FILE-URI"><b>cert</b> = CERT_FILE | URI</dt>
-<dd>
-
+<p>This option allows loading CA certificates from an external source
+supported by the <em>OSSL_STORE</em> framework, such as a PKCS#11 module
+(e.g., hardware token), the system certificate store, or a remote
+resource.</p>
+<p>This option can be used independently of <em>CAfile</em> and
+<em>CAdir</em>, and similarly provides certificates used by
+<em>verifyChain</em> or <em>verifyPeer</em>, as well as for validating
+OCSP stapling in server mode.</p>
+<p>This option requires OpenSSL 3.0 or later.</p></li>
+<li><p><strong>cert</strong> = CERT_FILE | URI</p>
 <p>certificate chain file name</p>
-
-<p>The parameter specifies the file containing certificates used by <b>stunnel</b> to authenticate itself against the remote client or server. The file should contain the whole certificate chain starting from the actual server/client certificate, and ending with the self-signed root CA certificate. The file must be either in PEM or P12 format.</p>
-
-<p>A certificate chain is required in server mode, and optional in client mode.</p>
-
-<p>The <b>cert</b> option may be specified multiple times. The first certificate encountered is used as the server or client certificate, while any subsequent certificates are treated as intermediate chain elements. This functionality requires OpenSSL version 1.0.2 or later.</p>
-
-<p>This parameter is also used as the certificate identifier (PKCS#11 URI) when a hardware engine or provider is enabled.</p>
-
-<p>Note: The provider requires OpenSSL 3.0 or later</p>
-
-</dd>
-<dt id="checkEmail-EMAIL"><b>checkEmail</b> = EMAIL</dt>
-<dd>
-
-<p>verify the email address of the end-entity (leaf) peer certificate subject</p>
-
-<p>Certificates are accepted if no subject checks were specified, or the email address of the end-entity (leaf) peer certificate matches any of the email addresses specified with <i>checkEmail</i>.</p>
-
-<p>Multiple <i>checkEmail</i> options are allowed in a single service section.</p>
-
-<p>This option requires OpenSSL 1.0.2 or later.</p>
-
-</dd>
-<dt id="checkHost-HOST"><b>checkHost</b> = HOST</dt>
-<dd>
-
+<p>The parameter specifies the file containing certificates used by
+<strong>stunnel</strong> to authenticate itself against the remote
+client or server. The file should contain the whole certificate chain
+starting from the actual server/client certificate, and ending with the
+self-signed root CA certificate. The file must be either in PEM or P12
+format.</p>
+<p>A certificate chain is required in server mode, and optional in
+client mode.</p>
+<p>The <strong>cert</strong> option may be specified multiple times. The
+first certificate encountered is used as the server or client
+certificate, while any subsequent certificates are treated as
+intermediate chain elements. This functionality requires OpenSSL version
+1.0.2 or later.</p>
+<p>This parameter is also used as the certificate identifier (PKCS#11
+URI) when a hardware engine or provider is enabled.</p>
+<p>Note: The provider requires OpenSSL 3.0 or later</p></li>
+<li><p><strong>checkEmail</strong> = EMAIL</p>
+<p>verify the email address of the end-entity (leaf) peer certificate
+subject</p>
+<p>Certificates are accepted if no subject checks were specified, or the
+email address of the end-entity (leaf) peer certificate matches any of
+the email addresses specified with <em>checkEmail</em>.</p>
+<p>Multiple <em>checkEmail</em> options are allowed in a single service
+section.</p>
+<p>This option requires OpenSSL 1.0.2 or later.</p></li>
+<li><p><strong>checkHost</strong> = HOST</p>
 <p>verify the host of the end-entity (leaf) peer certificate subject</p>
-
-<p>Certificates are accepted if no subject checks were specified, or the host name of the end-entity (leaf) peer certificate matches any of the hosts specified with <i>checkHost</i>.</p>
-
-<p>Multiple <i>checkHost</i> options are allowed in a single service section.</p>
-
-<p>This option requires OpenSSL 1.0.2 or later.</p>
-
-</dd>
-<dt id="checkIP-IP"><b>checkIP</b> = IP</dt>
-<dd>
-
-<p>verify the IP address of the end-entity (leaf) peer certificate subject</p>
-
-<p>Certificates are accepted if no subject checks were specified, or the IP address of the end-entity (leaf) peer certificate matches any of the IP addresses specified with <i>checkIP</i>.</p>
-
-<p>Multiple <i>checkIP</i> options are allowed in a single service section.</p>
-
-<p>This option requires OpenSSL 1.0.2 or later.</p>
-
-</dd>
-<dt id="ciphers-CIPHER_LIST"><b>ciphers</b> = CIPHER_LIST</dt>
-<dd>
-
+<p>Certificates are accepted if no subject checks were specified, or the
+host name of the end-entity (leaf) peer certificate matches any of the
+hosts specified with <em>checkHost</em>.</p>
+<p>Multiple <em>checkHost</em> options are allowed in a single service
+section.</p>
+<p>This option requires OpenSSL 1.0.2 or later.</p></li>
+<li><p><strong>checkIP</strong> = IP</p>
+<p>verify the IP address of the end-entity (leaf) peer certificate
+subject</p>
+<p>Certificates are accepted if no subject checks were specified, or the
+IP address of the end-entity (leaf) peer certificate matches any of the
+IP addresses specified with <em>checkIP</em>.</p>
+<p>Multiple <em>checkIP</em> options are allowed in a single service
+section.</p>
+<p>This option requires OpenSSL 1.0.2 or later.</p></li>
+<li><p><strong>ciphers</strong> = CIPHER_LIST</p>
 <p>select permitted TLS ciphers (TLSv1.2 and below)</p>
-
 <p>This option does not impact TLSv1.3 ciphersuites.</p>
-
-<p>A colon-delimited list of the ciphers to allow in the TLS connection, for example DES-CBC3-SHA:IDEA-CBC-MD5.</p>
-
-</dd>
-<dt id="ciphersuites-CIPHERSUITES_LIST"><b>ciphersuites</b> = CIPHERSUITES_LIST</dt>
-<dd>
-
+<p>A colon-delimited list of the ciphers to allow in the TLS connection,
+for example DES-CBC3-SHA:IDEA-CBC-MD5.</p></li>
+<li><p><strong>ciphersuites</strong> = CIPHERSUITES_LIST</p>
 <p>select permitted TLSv1.3 ciphersuites</p>
-
-<p>A colon-delimited list of TLSv1.3 ciphersuites names in order of preference.</p>
-
-<p>The <i>ciphersuites</i> option ignores unknown ciphers when compiled with <b>OpenSSL 3.0</b> or later.</p>
-
+<p>A colon-delimited list of TLSv1.3 ciphersuites names in order of
+preference.</p>
+<p>The <em>ciphersuites</em> option ignores unknown ciphers when
+compiled with <strong>OpenSSL 3.0</strong> or later.</p>
 <p>This option requires OpenSSL 1.1.1 or later.</p>
-
-<p>default: TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256</p>
-
-</dd>
-<dt id="client-yes-no"><b>client</b> = yes | no</dt>
-<dd>
-
+<p>default:
+TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256</p></li>
+<li><p><strong>client</strong> = yes | no</p>
 <p>client mode (remote service uses TLS)</p>
-
-<p>default: no (server mode)</p>
-
-</dd>
-<dt id="config-COMMAND-:PARAMETER"><b>config</b> = COMMAND[:PARAMETER]</dt>
-<dd>
-
-<p><b>OpenSSL</b> configuration command</p>
-
-<p>The <b>OpenSSL</b> configuration command is executed with the specified parameter. This allows any configuration commands to be invoked from the stunnel configuration file. Supported commands are described on the <i>SSL_CONF_cmd(3ssl)</i> manual page.</p>
-
-<p>Several <i>config</i> lines can be used to specify multiple configuration commands.</p>
-
-<p>Use <i>curves</i> option instead of enabling <i>config = Curves:list_curves</i> to support elliptic curves.</p>
-
-<p>This option requires OpenSSL 1.0.2 or later.</p>
-
-</dd>
-<dt id="connect-HOST:-PORT"><b>connect</b> = [HOST:]PORT</dt>
-<dd>
-
+<p>default: no (server mode)</p></li>
+<li><p><strong>config</strong> = COMMAND[:PARAMETER]</p>
+<p><strong>OpenSSL</strong> configuration command</p>
+<p>The <strong>OpenSSL</strong> configuration command is executed with
+the specified parameter. This allows any configuration commands to be
+invoked from the stunnel configuration file. Supported commands are
+described on the <em>SSL_CONF_cmd(3ssl)</em> manual page.</p>
+<p>Several <em>config</em> lines can be used to specify multiple
+configuration commands.</p>
+<p>Use <em>curves</em> option instead of enabling <em>config =
+Curves:list_curves</em> to support elliptic curves.</p>
+<p>This option requires OpenSSL 1.0.2 or later.</p></li>
+<li><p><strong>connect</strong> = [HOST:]PORT</p>
 <p>connect to a remote address</p>
-
 <p>If no host is specified, the host defaults to localhost.</p>
-
-<p>Multiple <i>connect</i> options are allowed in a single service section. If host resolves to multiple addresses and/or if multiple <i>connect</i> options are specified, then the remote address is chosen using a round-robin algorithm.</p>
-
-</dd>
-<dt id="CRLpath-DIRECTORY"><b>CRLpath</b> = DIRECTORY</dt>
-<dd>
-
+<p>Multiple <em>connect</em> options are allowed in a single service
+section. If host resolves to multiple addresses and/or if multiple
+<em>connect</em> options are specified, then the remote address is
+chosen using a round-robin algorithm.</p></li>
+<li><p><strong>CRLpath</strong> = DIRECTORY</p>
 <p>Certificate Revocation Lists directory</p>
-
-<p>This is the directory in which <b>stunnel</b> will look for CRLs when using the <i>verifyChain</i> and <i>verifyPeer</i> options. Note that the CRLs in this directory should be named XXXXXXXX.r0 where XXXXXXXX is the hash value of the CRL.</p>
-
-<p>The hash algorithm has been changed in <b>OpenSSL 1.0.0</b>. It is required to c_rehash the directory on upgrade from <b>OpenSSL 0.x.x</b> to <b>OpenSSL 1.x.x</b>.</p>
-
-<p><i>CRLpath</i> path is relative to the <i>chroot</i> directory if specified.</p>
-
-</dd>
-<dt id="CRLfile-CRL_FILE"><b>CRLfile</b> = CRL_FILE</dt>
-<dd>
-
+<p>This is the directory in which <strong>stunnel</strong> will look for
+CRLs when using the <em>verifyChain</em> and <em>verifyPeer</em>
+options. Note that the CRLs in this directory should be named
+XXXXXXXX.r0 where XXXXXXXX is the hash value of the CRL.</p>
+<p>The hash algorithm has been changed in <strong>OpenSSL
+1.0.0</strong>. It is required to c_rehash the directory on upgrade from
+<strong>OpenSSL 0.x.x</strong> to <strong>OpenSSL 1.x.x</strong>.</p>
+<p><em>CRLpath</em> path is relative to the <em>chroot</em> directory if
+specified.</p></li>
+<li><p><strong>CRLfile</strong> = CRL_FILE</p>
 <p>Certificate Revocation Lists file</p>
-
-<p>This file contains multiple CRLs, used with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
-
-</dd>
-<dt id="curves-list"><b>curves</b> = list</dt>
-<dd>
-
-<p>ECDH curves separated with &#39;:&#39;</p>
-
+<p>This file contains multiple CRLs, used with the <em>verifyChain</em>
+and <em>verifyPeer</em> options.</p></li>
+<li><p><strong>curves</strong> = list</p>
+<p>ECDH curves separated with ‘:’</p>
 <p>Note: This option is supported for server mode sockets only.</p>
-
 <p>Only a single curve name is allowed for OpenSSL older than 1.1.1.</p>
-
 <p>To get a list of supported curves use:</p>
-
 <pre><code>openssl ecparam -list_curves</code></pre>
-
 <p>default:</p>
-
 <pre><code>X25519:P-256:X448:P-521:P-384 (OpenSSL 1.1.1 or later)
 
-prime256v1 (OpenSSL older than 1.1.1)</code></pre>
-
-</dd>
-<dt id="logId-TYPE"><b>logId</b> = TYPE</dt>
-<dd>
-
+prime256v1 (OpenSSL older than 1.1.1)</code></pre></li>
+<li><p><strong>logId</strong> = TYPE</p>
 <p>connection identifier type</p>
-
-<p>This identifier allows you to distinguish log entries generated for each of the connections.</p>
-
+<p>This identifier allows you to distinguish log entries generated for
+each of the connections.</p>
 <p>Currently supported types:</p>
-
-<dl>
-
-<dt id="sequential"><i>sequential</i></dt>
-<dd>
-
-<p>The numeric sequential identifier is only unique within a single instance of <b>stunnel</b>, but very compact. It is most useful for manual log analysis.</p>
-
-</dd>
-<dt id="unique"><i>unique</i></dt>
-<dd>
-
-<p>This alphanumeric identifier is globally unique, but longer than the sequential number. It is most useful for automated log analysis.</p>
-
-</dd>
-<dt id="thread"><i>thread</i></dt>
-<dd>
-
-<p>The operating system thread identifier is neither unique (even within a single instance of <b>stunnel</b>) nor short. It is most useful for debugging software or configuration issues.</p>
-
-</dd>
-<dt id="process"><i>process</i></dt>
-<dd>
-
-<p>The operating system process identifier (PID) may be useful in the inetd mode.</p>
-
-</dd>
-</dl>
-
-<p>default: sequential</p>
-
-</dd>
-<dt id="debug-LEVEL"><b>debug</b> = LEVEL</dt>
-<dd>
-
+<ul>
+<li><p><em>sequential</em></p>
+<p>The numeric sequential identifier is only unique within a single
+instance of <strong>stunnel</strong>, but very compact. It is most
+useful for manual log analysis.</p></li>
+<li><p><em>unique</em></p>
+<p>This alphanumeric identifier is globally unique, but longer than the
+sequential number. It is most useful for automated log
+analysis.</p></li>
+<li><p><em>thread</em></p>
+<p>The operating system thread identifier is neither unique (even within
+a single instance of <strong>stunnel</strong>) nor short. It is most
+useful for debugging software or configuration issues.</p></li>
+<li><p><em>process</em></p>
+<p>The operating system process identifier (PID) may be useful in the
+inetd mode.</p></li>
+</ul>
+<p>default: sequential</p></li>
+<li><p><strong>debug</strong> = LEVEL</p>
 <p>debugging level</p>
-
-<p>Level is a one of the syslog level names or numbers emerg (0), alert (1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7). All logs for the specified level and all levels numerically less than it will be shown. The default is notice (5).</p>
-
-<p>While the <i>debug = debug</i> or <i>debug = 7</i> level generates the most verbose output, it is only intended to be used by stunnel developers. Please only use this value if you are a developer, or you intend to send your logs to our technical support. Otherwise, the generated logs <b>will</b> be confusing.</p>
-
-</dd>
-<dt id="delay-yes-no"><b>delay</b> = yes | no</dt>
-<dd>
-
-<p>delay DNS lookup for the <i>connect</i> option</p>
-
-<p>This option is useful for dynamic DNS, or when DNS is not available during <b>stunnel</b> startup (road warrior VPN, dial-up configurations).</p>
-
-<p>Delayed resolver mode is automatically engaged when stunnel fails to resolve on startup any of the <i>connect</i> targets for a service.</p>
-
-<p>Delayed resolver inflicts <i>failover = prio</i>.</p>
-
-<p>default: no</p>
-
-</dd>
-<dt id="engineId-ENGINE_ID"><b>engineId</b> = ENGINE_ID</dt>
-<dd>
-
-<p>select engine ID for the service</p>
-
-</dd>
-<dt id="engineNum-ENGINE_NUMBER"><b>engineNum</b> = ENGINE_NUMBER</dt>
-<dd>
-
+<p>Level is a one of the syslog level names or numbers emerg (0), alert
+(1), crit (2), err (3), warning (4), notice (5), info (6), or debug (7).
+All logs for the specified level and all levels numerically less than it
+will be shown. The default is notice (5).</p>
+<p>While the <em>debug = debug</em> or <em>debug = 7</em> level
+generates the most verbose output, it is only intended to be used by
+stunnel developers. Please only use this value if you are a developer,
+or you intend to send your logs to our technical support. Otherwise, the
+generated logs <strong>will</strong> be confusing.</p></li>
+<li><p><strong>delay</strong> = yes | no</p>
+<p>delay DNS lookup for the <em>connect</em> option</p>
+<p>This option is useful for dynamic DNS, or when DNS is not available
+during <strong>stunnel</strong> startup (road warrior VPN, dial-up
+configurations).</p>
+<p>Delayed resolver mode is automatically engaged when stunnel fails to
+resolve on startup any of the <em>connect</em> targets for a
+service.</p>
+<p>Delayed resolver inflicts <em>failover = prio</em>.</p>
+<p>default: no</p></li>
+<li><p><strong>engineId</strong> = ENGINE_ID</p>
+<p>select engine ID for the service</p></li>
+<li><p><strong>engineNum</strong> = ENGINE_NUMBER</p>
 <p>select engine number for the service</p>
-
-<p>The engines are numbered starting from 1.</p>
-
-</dd>
-<dt id="exec-EXECUTABLE_PATH"><b>exec</b> = EXECUTABLE_PATH</dt>
-<dd>
-
+<p>The engines are numbered starting from 1.</p></li>
+<li><p><strong>exec</strong> = EXECUTABLE_PATH</p>
 <p>execute a local inetd-type program</p>
-
-<p><i>exec</i> path is relative to the <i>chroot</i> directory if specified.</p>
-
-<p>The following environmental variables are set on Unix platforms: REMOTE_HOST, REMOTE_PORT, SSL_CLIENT_DN, SSL_CLIENT_I_DN.</p>
-
-</dd>
-<dt id="execArgs-0-1-2"><b>execArgs</b> = $0 $1 $2 ...</dt>
-<dd>
-
-<p>arguments for <i>exec</i> including the program name ($0)</p>
-
-<p>Quoting is currently not supported. Arguments are separated with an arbitrary amount of whitespace.</p>
-
-</dd>
-<dt id="failover-rr-prio"><b>failover</b> = rr | prio</dt>
-<dd>
-
-<p>Failover strategy for multiple &quot;connect&quot; targets.</p>
-
-<dl>
-
-<dt id="rr"><i>rr</i></dt>
-<dd>
-
-<p>round robin - fair load distribution</p>
-
-</dd>
-<dt id="prio"><i>prio</i></dt>
-<dd>
-
-<p>priority - use the order specified in config file</p>
-
-</dd>
-</dl>
-
-<p>default: prio</p>
-
-</dd>
-<dt id="ident-USERNAME"><b>ident</b> = USERNAME</dt>
-<dd>
-
-<p>use IDENT (RFC 1413) username checking</p>
-
-</dd>
-<dt id="include-DIRECTORY"><b>include</b> = DIRECTORY</dt>
-<dd>
-
+<p><em>exec</em> path is relative to the <em>chroot</em> directory if
+specified.</p>
+<p>The following environmental variables are set on Unix platforms:
+REMOTE_HOST, REMOTE_PORT, SSL_CLIENT_DN, SSL_CLIENT_I_DN.</p></li>
+<li><p><strong>execArgs</strong> = $0 $1 $2 ...</p>
+<p>arguments for <em>exec</em> including the program name ($0)</p>
+<p>Quoting is currently not supported. Arguments are separated with an
+arbitrary amount of whitespace.</p></li>
+<li><p><strong>failover</strong> = rr | prio</p>
+<p>Failover strategy for multiple "connect" targets.</p>
+<ul>
+<li><p><em>rr</em></p>
+<p>round robin - fair load distribution</p></li>
+<li><p><em>prio</em></p>
+<p>priority - use the order specified in config file</p></li>
+</ul>
+<p>default: prio</p></li>
+<li><p><strong>ident</strong> = USERNAME</p>
+<p>use IDENT (RFC 1413) username checking</p></li>
+<li><p><strong>include</strong> = DIRECTORY</p>
 <p>include all configuration file parts located in DIRECTORY</p>
-
-<p>The files are included in the ascending alphabetical order of their names. The recommended filename convention is</p>
-
+<p>The files are included in the ascending alphabetical order of their
+names. The recommended filename convention is</p>
 <p>for global options:</p>
-
 <pre><code>00-global.conf</code></pre>
-
 <p>for local service-level options:</p>
-
 <pre><code>01-service.conf
 
-02-service.conf</code></pre>
-
-</dd>
-<dt id="key-KEY_FILE-URI"><b>key</b> = KEY_FILE | URI</dt>
-<dd>
-
-<p>private key for the certificate specified with <i>cert</i> option</p>
-
-<p>A private key is needed to authenticate the certificate owner. Since this file should be kept secret it should only be readable by its owner. On Unix systems you can use the following command:</p>
-
+02-service.conf</code></pre></li>
+<li><p><strong>key</strong> = KEY_FILE | URI</p>
+<p>private key for the certificate specified with <em>cert</em>
+option</p>
+<p>A private key is needed to authenticate the certificate owner. Since
+this file should be kept secret it should only be readable by its owner.
+On Unix systems you can use the following command:</p>
 <pre><code>chmod 600 keyfile</code></pre>
-
-<p>This parameter is also used as the private key identifier (PKCS#11 URI) when a hardware engine or provider is enabled.</p>
-
+<p>This parameter is also used as the private key identifier (PKCS#11
+URI) when a hardware engine or provider is enabled.</p>
 <p>Note: The provider requires OpenSSL 3.0 or later</p>
-
-<p>default: the value of the <i>cert</i> option</p>
-
-</dd>
-<dt id="libwrap-yes-no"><b>libwrap</b> = yes | no</dt>
-<dd>
-
-<p>Enable or disable the use of /etc/hosts.allow and /etc/hosts.deny.</p>
-
-<p>default: no (since version 5.00)</p>
-
-</dd>
-<dt id="local-HOST"><b>local</b> = HOST</dt>
-<dd>
-
-<p>By default, the IP address of the outgoing interface is used as the source for remote connections. Use this option to bind a static local IP address instead.</p>
-
-</dd>
-<dt id="OCSP-URL"><b>OCSP</b> = URL</dt>
-<dd>
-
-<p>select OCSP responder for the end-entity (leaf) peer certificate verification</p>
-
-</dd>
-<dt id="OCSPaia-yes-no"><b>OCSPaia</b> = yes | no</dt>
-<dd>
-
+<p>default: the value of the <em>cert</em> option</p></li>
+<li><p><strong>libwrap</strong> = yes | no</p>
+<p>Enable or disable the use of /etc/hosts.allow and
+/etc/hosts.deny.</p>
+<p>default: no (since version 5.00)</p></li>
+<li><p><strong>local</strong> = HOST</p>
+<p>By default, the IP address of the outgoing interface is used as the
+source for remote connections. Use this option to bind a static local IP
+address instead.</p></li>
+<li><p><strong>OCSP</strong> = URL</p>
+<p>select OCSP responder for the end-entity (leaf) peer certificate
+verification</p></li>
+<li><p><strong>OCSPaia</strong> = yes | no</p>
 <p>validate certificates with their AIA OCSP responders</p>
-
-<p>This option enables <i>stunnel</i> to validate certificates with the list of OCSP responder URLs retrieved from their AIA (Authority Information Access) extension.</p>
-
-</dd>
-<dt id="OCSPflag-OCSP_FLAG"><b>OCSPflag</b> = OCSP_FLAG</dt>
-<dd>
-
+<p>This option enables <em>stunnel</em> to validate certificates with
+the list of OCSP responder URLs retrieved from their AIA (Authority
+Information Access) extension.</p></li>
+<li><p><strong>OCSPflag</strong> = OCSP_FLAG</p>
 <p>specify OCSP responder flag</p>
-
-<p>Several <i>OCSPflag</i> can be used to specify multiple flags.</p>
-
-<p>currently supported flags: NOCERTS, NOINTERN, NOSIGS, NOCHAIN, NOVERIFY, NOEXPLICIT, NOCASIGN, NODELEGATED, NOCHECKS, TRUSTOTHER, RESPID_KEY, NOTIME</p>
-
-</dd>
-<dt id="OCSPnonce-yes-no"><b>OCSPnonce</b> = yes | no</dt>
-<dd>
-
+<p>Several <em>OCSPflag</em> can be used to specify multiple flags.</p>
+<p>currently supported flags: NOCERTS, NOINTERN, NOSIGS, NOCHAIN,
+NOVERIFY, NOEXPLICIT, NOCASIGN, NODELEGATED, NOCHECKS, TRUSTOTHER,
+RESPID_KEY, NOTIME</p></li>
+<li><p><strong>OCSPnonce</strong> = yes | no</p>
 <p>send and verify the OCSP nonce extension</p>
-
-<p>This option protects the OCSP protocol against replay attacks. Due to its computational overhead, the nonce extension is usually only supported on internal (e.g. corporate) responders, and not on public OCSP responders.</p>
-
-</dd>
-<dt id="OCSPrequire-yes-no"><b>OCSPrequire</b> = yes | no</dt>
-<dd>
-
+<p>This option protects the OCSP protocol against replay attacks. Due to
+its computational overhead, the nonce extension is usually only
+supported on internal (e.g. corporate) responders, and not on public
+OCSP responders.</p></li>
+<li><p><strong>OCSPrequire</strong> = yes | no</p>
 <p>require a conclusive OCSP response</p>
-
-<p>Disable this option to allow a connection even though no conclusive OCSP response was retrieved from stapling and a direct request to the OCSP responder.</p>
-
-<p>default: yes</p>
-
-</dd>
-<dt id="options-SSL_OPTIONS"><b>options</b> = SSL_OPTIONS</dt>
-<dd>
-
-<p><b>OpenSSL</b> library options</p>
-
-<p>The parameter is the <b>OpenSSL</b> option name as described in the <i>SSL_CTX_set_options(3ssl)</i> manual, but without <i>SSL_OP_</i> prefix. <i>stunnel -options</i> lists the options found to be allowed in the current combination of <i>stunnel</i> and the <i>OpenSSL</i> library used to build it.</p>
-
-<p>Several <i>option</i> lines can be used to specify multiple options. An option name can be prepended with a dash (&quot;-&quot;) to disable the option.</p>
-
-<p>For example, for compatibility with the erroneous Eudora TLS implementation, the following option can be used:</p>
-
+<p>Disable this option to allow a connection even though no conclusive
+OCSP response was retrieved from stapling and a direct request to the
+OCSP responder.</p>
+<p>default: yes</p></li>
+<li><p><strong>options</strong> = SSL_OPTIONS</p>
+<p><strong>OpenSSL</strong> library options</p>
+<p>The parameter is the <strong>OpenSSL</strong> option name as
+described in the <em>SSL_CTX_set_options(3ssl)</em> manual, but without
+<em>SSL_OP_</em> prefix. <em>stunnel -options</em> lists the options
+found to be allowed in the current combination of <em>stunnel</em> and
+the <em>OpenSSL</em> library used to build it.</p>
+<p>Several <em>option</em> lines can be used to specify multiple
+options. An option name can be prepended with a dash ("-") to disable
+the option.</p>
+<p>For example, for compatibility with the erroneous Eudora TLS
+implementation, the following option can be used:</p>
 <pre><code>options = DONT_INSERT_EMPTY_FRAGMENTS</code></pre>
-
 <p>default:</p>
-
 <pre><code>options = NO_SSLv2
 options = NO_SSLv3</code></pre>
-
-<p>Use <i>sslVersionMax</i> or <i>sslVersionMin</i> option instead of disabling specific TLS protocol versions when compiled with <b>OpenSSL 1.1.0</b> or later.</p>
-
-</dd>
-<dt id="protocol-PROTO"><b>protocol</b> = PROTO</dt>
-<dd>
-
+<p>Use <em>sslVersionMax</em> or <em>sslVersionMin</em> option instead
+of disabling specific TLS protocol versions when compiled with
+<strong>OpenSSL 1.1.0</strong> or later.</p></li>
+<li><p><strong>protocol</strong> = PROTO</p>
 <p>application protocol to negotiate TLS</p>
-
-<p>This option enables initial, protocol-specific negotiation of the TLS encryption. The <i>protocol</i> option should not be used with TLS encryption on a separate port.</p>
-
+<p>This option enables initial, protocol-specific negotiation of the TLS
+encryption. The <em>protocol</em> option should not be used with TLS
+encryption on a separate port.</p>
 <p>Currently supported protocols:</p>
-
-<dl>
-
-<dt id="cifs"><i>cifs</i></dt>
-<dd>
-
-<p>Proprietary (undocumented) extension of CIFS protocol implemented in Samba. Support for this extension was dropped in Samba 3.0.0.</p>
-
-</dd>
-<dt id="capwin"><i>capwin</i></dt>
-<dd>
-
-<p>http://www.capwin.org/ application support</p>
-
-</dd>
-<dt id="capwinctrl"><i>capwinctrl</i></dt>
-<dd>
-
-<p>http://www.capwin.org/ application support</p>
-
-<p>This protocol is only supported in client mode.</p>
-
-</dd>
-<dt id="connect"><i>connect</i></dt>
-<dd>
-
-<p>Based on RFC 2817 - <i>Upgrading to TLS Within HTTP/1.1</i>, section 5.2 - <i>Requesting a Tunnel with CONNECT</i></p>
-
-<p>This protocol is only supported in client mode.</p>
-
-</dd>
-<dt id="imap"><i>imap</i></dt>
-<dd>
-
-<p>Based on RFC 2595 - <i>Using TLS with IMAP, POP3 and ACAP</i></p>
-
-</dd>
-<dt id="ldap"><i>ldap</i></dt>
-<dd>
-
-<p>Based on RFC 2830 - <i>Lightweight Directory Access Protocol (v3): Extension for Transport Layer Security</i></p>
-
-</dd>
-<dt id="nntp"><i>nntp</i></dt>
-<dd>
-
-<p>Based on RFC 4642 - <i>Using Transport Layer Security (TLS) with Network News Transfer Protocol (NNTP)</i></p>
-
-<p>This protocol is only supported in client mode.</p>
-
-</dd>
-<dt id="pgsql"><i>pgsql</i></dt>
-<dd>
-
-<p>Based on <i>http://www.postgresql.org/docs/8.3/static/protocol-flow.html#AEN73982</i></p>
-
-</dd>
-<dt id="pop3"><i>pop3</i></dt>
-<dd>
-
-<p>Based on RFC 2449 - <i>POP3 Extension Mechanism</i></p>
-
-</dd>
-<dt id="proxy"><i>proxy</i></dt>
-<dd>
-
-<p>Passing of the original client IP address with HAProxy PROXY protocol version 1 <i>https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt</i></p>
-
-</dd>
-<dt id="smtp"><i>smtp</i></dt>
-<dd>
-
-<p>Based on RFC 2487 - <i>SMTP Service Extension for Secure SMTP over TLS</i></p>
-
-</dd>
-<dt id="socks"><i>socks</i></dt>
-<dd>
-
-<p>SOCKS versions 4, 4a, and 5 are supported. The SOCKS protocol itself is encapsulated within TLS encryption layer to protect the final destination address.</p>
-
-<p><i>http://www.openssh.com/txt/socks4.protocol</i></p>
-
-<p><i>http://www.openssh.com/txt/socks4a.protocol</i></p>
-
-<p>The BIND command of the SOCKS protocol is not supported. The USERID parameter is ignored.</p>
-
-<p>See Examples section for sample configuration files for VPN based on SOCKS encryption.</p>
-
-</dd>
-</dl>
-
-</dd>
-<dt id="protocolAuthentication-AUTHENTICATION"><b>protocolAuthentication</b> = AUTHENTICATION</dt>
-<dd>
-
+<ul>
+<li><p><em>cifs</em></p>
+<p>Proprietary (undocumented) extension of CIFS protocol implemented in
+Samba. Support for this extension was dropped in Samba 3.0.0.</p></li>
+<li><p><em>capwin</em></p>
+<p><a href="https://www.capwin.org/"
+class="uri">https://www.capwin.org/</a> application support</p></li>
+<li><p><em>capwinctrl</em></p>
+<p><a href="https://www.capwin.org/"
+class="uri">https://www.capwin.org/</a> application support</p>
+<p>This protocol is only supported in client mode.</p></li>
+<li><p><em>connect</em></p>
+<p>Based on RFC 2817 - <em>Upgrading to TLS Within HTTP/1.1</em>,
+section 5.2 - <em>Requesting a Tunnel with CONNECT</em></p>
+<p>This protocol is only supported in client mode.</p></li>
+<li><p><em>imap</em></p>
+<p>Based on RFC 2595 - <em>Using TLS with IMAP, POP3 and
+ACAP</em></p></li>
+<li><p><em>ldap</em></p>
+<p>Based on RFC 2830 - <em>Lightweight Directory Access Protocol (v3):
+Extension for Transport Layer Security</em></p></li>
+<li><p><em>nntp</em></p>
+<p>Based on RFC 4642 - <em>Using Transport Layer Security (TLS) with
+Network News Transfer Protocol (NNTP)</em></p>
+<p>This protocol is only supported in client mode.</p></li>
+<li><p><em>pgsql</em></p>
+<p>Based on <a
+href="https://www.postgresql.org/docs/8.3/static/protocol-flow.html#AEN73982"
+class="uri">https://www.postgresql.org/docs/8.3/static/protocol-flow.html#AEN73982</a></p></li>
+<li><p><em>pop3</em></p>
+<p>Based on RFC 2449 - <em>POP3 Extension Mechanism</em></p></li>
+<li><p><em>proxy</em></p>
+<p>Passing of the original client IP address with HAProxy PROXY protocol
+version 1 <a
+href="https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt"
+class="uri">https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt</a></p></li>
+<li><p><em>smtp</em></p>
+<p>Based on RFC 2487 - <em>SMTP Service Extension for Secure SMTP over
+TLS</em></p></li>
+<li><p><em>socks</em></p>
+<p>SOCKS versions 4, 4a, and 5 are supported. The SOCKS protocol itself
+is encapsulated within TLS encryption layer to protect the final
+destination address.</p>
+<p><a href="https://www.openssh.com/txt/socks4.protocol"
+class="uri">https://www.openssh.com/txt/socks4.protocol</a></p>
+<p><a href="https://www.openssh.com/txt/socks4a.protocol"
+class="uri">https://www.openssh.com/txt/socks4a.protocol</a></p>
+<p>The BIND command of the SOCKS protocol is not supported. The USERID
+parameter is ignored.</p>
+<p>See Examples section for sample configuration files for VPN based on
+SOCKS encryption.</p></li>
+</ul></li>
+<li><p><strong>protocolAuthentication</strong> = AUTHENTICATION</p>
 <p>authentication type for the protocol negotiations</p>
-
-<p>Currently, this option is only supported in the client-side &#39;connect&#39; and &#39;smtp&#39; protocols.</p>
-
-<p>Supported authentication types for the &#39;connect&#39; protocol are &#39;basic&#39; or &#39;ntlm&#39;. The default &#39;connect&#39; authentication type is &#39;basic&#39;.</p>
-
-<p>Supported authentication types for the &#39;smtp&#39; protocol are &#39;plain&#39; or &#39;login&#39;. The default &#39;smtp&#39; authentication type is &#39;plain&#39;.</p>
-
-</dd>
-<dt id="protocolDomain-DOMAIN"><b>protocolDomain</b> = DOMAIN</dt>
-<dd>
-
+<p>Currently, this option is only supported in the client-side ‘connect’
+and ‘smtp’ protocols.</p>
+<p>Supported authentication types for the ‘connect’ protocol are ‘basic’
+or ‘ntlm’. The default ‘connect’ authentication type is ‘basic’.</p>
+<p>Supported authentication types for the ‘smtp’ protocol are ‘plain’ or
+‘login’. The default ‘smtp’ authentication type is ‘plain’.</p></li>
+<li><p><strong>protocolDomain</strong> = DOMAIN</p>
 <p>domain for the protocol negotiations</p>
-
-<p>Currently, this option is only supported in the client-side &#39;connect&#39; protocol.</p>
-
-</dd>
-<dt id="protocolHeader-HEADER"><b>protocolHeader</b> = HEADER</dt>
-<dd>
-
+<p>Currently, this option is only supported in the client-side ‘connect’
+protocol.</p></li>
+<li><p><strong>protocolHeader</strong> = HEADER</p>
 <p>header for the protocol negotiations</p>
-
-<p>Currently, this option is only supported in the client-side &#39;connect&#39; protocol.</p>
-
-</dd>
-<dt id="protocolHost-ADDRESS"><b>protocolHost</b> = ADDRESS</dt>
-<dd>
-
+<p>Currently, this option is only supported in the client-side ‘connect’
+protocol.</p></li>
+<li><p><strong>protocolHost</strong> = ADDRESS</p>
 <p>host address for the protocol negotiations</p>
-
-<p>For the &#39;connect&#39; protocol negotiations, <i>protocolHost</i> specifies HOST:PORT of the final TLS server to be connected to by the proxy. The proxy server directly connected by <b>stunnel</b> must be specified with the <i>connect</i> option.</p>
-
-<p>For the &#39;smtp&#39; protocol negotiations, <i>protocolHost</i> controls the client SMTP HELO/EHLO value.</p>
-
-</dd>
-<dt id="protocolPassword-PASSWORD"><b>protocolPassword</b> = PASSWORD</dt>
-<dd>
-
+<p>For the ‘connect’ protocol negotiations, <em>protocolHost</em>
+specifies HOST:PORT of the final TLS server to be connected to by the
+proxy. The proxy server directly connected by <strong>stunnel</strong>
+must be specified with the <em>connect</em> option.</p>
+<p>For the ‘smtp’ protocol negotiations, <em>protocolHost</em> controls
+the client SMTP HELO/EHLO value.</p></li>
+<li><p><strong>protocolPassword</strong> = PASSWORD</p>
 <p>password for the protocol negotiations</p>
-
-<p>Currently, this option is only supported in the client-side &#39;connect&#39; and &#39;smtp&#39; protocols.</p>
-
-</dd>
-<dt id="protocolUsername-USERNAME"><b>protocolUsername</b> = USERNAME</dt>
-<dd>
-
+<p>Currently, this option is only supported in the client-side ‘connect’
+and ‘smtp’ protocols.</p></li>
+<li><p><strong>protocolUsername</strong> = USERNAME</p>
 <p>username for the protocol negotiations</p>
-
-<p>Currently, this option is only supported in the client-side &#39;connect&#39; and &#39;smtp&#39; protocols.</p>
-
-</dd>
-<dt id="PSKidentity-IDENTITY"><b>PSKidentity</b> = IDENTITY</dt>
-<dd>
-
+<p>Currently, this option is only supported in the client-side ‘connect’
+and ‘smtp’ protocols.</p></li>
+<li><p><strong>PSKidentity</strong> = IDENTITY</p>
 <p>PSK identity for the PSK client</p>
-
-<p><i>PSKidentity</i> can be used on <b>stunnel</b> clients to select the PSK identity used for authentication. This option is ignored in server sections.</p>
-
-<p>default: the first identity specified in the <i>PSKsecrets</i> file.</p>
-
-</dd>
-<dt id="PSKsecrets-FILE"><b>PSKsecrets</b> = FILE</dt>
-<dd>
-
+<p><em>PSKidentity</em> can be used on <strong>stunnel</strong> clients
+to select the PSK identity used for authentication. This option is
+ignored in server sections.</p>
+<p>default: the first identity specified in the <em>PSKsecrets</em>
+file.</p></li>
+<li><p><strong>PSKsecrets</strong> = FILE</p>
 <p>file with PSK identities and corresponding keys</p>
-
 <p>Each line of the file in the following format:</p>
-
 <pre><code>IDENTITY:KEY</code></pre>
-
-<p>Hexadecimal keys are automatically converted to binary form. Keys are required to be at least 16 bytes long, which implies at least 32 characters for hexadecimal keys. The file should neither be world-readable nor world-writable.</p>
-
-</dd>
-<dt id="pty-yes-no-Unix-only"><b>pty</b> = yes | no (Unix only)</dt>
-<dd>
-
-<p>allocate a pseudoterminal for &#39;exec&#39; option</p>
-
-</dd>
-<dt id="redirect-HOST:-PORT"><b>redirect</b> = [HOST:]PORT</dt>
-<dd>
-
-<p>redirect TLS client connections on certificate-based authentication failures</p>
-
-<p>This option only works in server mode. Some protocol negotiations are also incompatible with the <i>redirect</i> option.</p>
-
-</dd>
-<dt id="renegotiation-yes-no"><b>renegotiation</b> = yes | no</dt>
-<dd>
-
+<p>Hexadecimal keys are automatically converted to binary form. Keys are
+required to be at least 16 bytes long, which implies at least 32
+characters for hexadecimal keys. The file should neither be
+world-readable nor world-writable.</p></li>
+<li><p><strong>pty</strong> = yes | no (Unix only)</p>
+<p>allocate a pseudoterminal for ‘exec’ option</p></li>
+<li><p><strong>redirect</strong> = [HOST:]PORT</p>
+<p>redirect TLS client connections on certificate-based authentication
+failures</p>
+<p>This option only works in server mode. Some protocol negotiations are
+also incompatible with the <em>redirect</em> option.</p></li>
+<li><p><strong>renegotiation</strong> = yes | no</p>
 <p>support TLS renegotiation</p>
-
-<p>Applications of the TLS renegotiation include some authentication scenarios, or re-keying long lasting connections.</p>
-
-<p>On the other hand this feature can facilitate a trivial CPU-exhaustion DoS attack:</p>
-
-<p><i>http://vincent.bernat.im/en/blog/2011-ssl-dos-mitigation.html</i></p>
-
-<p>Please note that disabling TLS renegotiation does not fully mitigate this issue.</p>
-
-<p>default: yes (if supported by <b>OpenSSL</b>)</p>
-
-</dd>
-<dt id="reset-yes-no"><b>reset</b> = yes | no</dt>
-<dd>
-
+<p>Applications of the TLS renegotiation include some authentication
+scenarios, or re-keying long lasting connections.</p>
+<p>On the other hand this feature can facilitate a trivial
+CPU-exhaustion DoS attack:</p>
+<p><a
+href="https://vincent.bernat.im/en/blog/2011-ssl-dos-mitigation.html"
+class="uri">https://vincent.bernat.im/en/blog/2011-ssl-dos-mitigation.html</a></p>
+<p>Please note that disabling TLS renegotiation does not fully mitigate
+this issue.</p>
+<p>default: yes (if supported by <strong>OpenSSL</strong>)</p></li>
+<li><p><strong>reset</strong> = yes | no</p>
 <p>attempt to use the TCP RST flag to indicate an error</p>
-
 <p>This option is not supported on some platforms.</p>
-
-<p>default: yes</p>
-
-</dd>
-<dt id="retry-yes-no-DELAY"><b>retry</b> = yes | no | DELAY</dt>
-<dd>
-
+<p>default: yes</p></li>
+<li><p><strong>retry</strong> = yes | no | DELAY</p>
 <p>reconnect a connect+exec section after it was disconnected</p>
-
-<p>The DELAY value specifies the number of milliseconds before retrying. &quot;retry = yes&quot; has the same effect as &quot;retry = 1000&quot;.</p>
-
-<p>default: no</p>
-
-</dd>
-<dt id="securityLevel-LEVEL"><b>securityLevel</b> = LEVEL</dt>
-<dd>
-
+<p>The DELAY value specifies the number of milliseconds before retrying.
+"retry = yes" has the same effect as "retry = 1000".</p>
+<p>default: no</p></li>
+<li><p><strong>securityLevel</strong> = LEVEL</p>
 <p>set the security level</p>
-
 <p>The meaning of each level is described below:</p>
-
-<dl>
-
-<dt id="level-0">level 0</dt>
-<dd>
-
-<p>Everything is permitted.</p>
-
-</dd>
-<dt id="level-1">level 1</dt>
-<dd>
-
-<p>The security level corresponds to a minimum of 80 bits of security. Any parameters offering below 80 bits of security are excluded. As a result RSA, DSA and DH keys shorter than 1024 bits and ECC keys shorter than 160 bits are prohibited. All export cipher suites are prohibited since they all offer less than 80 bits of security. SSL version 2 is prohibited. Any cipher suite using MD5 for the MAC is also prohibited. Additionally, SSLv3, TLS 1.0, TLS 1.1 are all disabled for OpenSSL 3.0 and later.</p>
-
-</dd>
-<dt id="level-2">level 2</dt>
-<dd>
-
-<p>Security level set to 112 bits of security. As a result RSA, DSA and DH keys shorter than 2048 bits and ECC keys shorter than 224 bits are prohibited. In addition to the level 1 exclusions any cipher suite using RC4 is also prohibited. Compression is disabled. SSL version 3 is also not allowed for OpenSSL older than 3.0.</p>
-
-</dd>
-<dt id="level-3">level 3</dt>
-<dd>
-
-<p>Security level set to 128 bits of security. As a result RSA, DSA and DH keys shorter than 3072 bits and ECC keys shorter than 256 bits are prohibited. In addition to the level 2 exclusions cipher suites not offering forward secrecy are prohibited. Session tickets are disabled. TLS versions below 1.1 are not permitted for OpenSSL older than 3.0.</p>
-
-</dd>
-<dt id="level-4">level 4</dt>
-<dd>
-
-<p>Security level set to 192 bits of security. As a result RSA, DSA and DH keys shorter than 7680 bits and ECC keys shorter than 384 bits are prohibited. Cipher suites using SHA1 for the MAC are prohibited. TLS versions below 1.2 are not permitted for OpenSSL older than 3.0.</p>
-
-</dd>
-<dt id="level-5">level 5</dt>
-<dd>
-
-<p>Security level set to 256 bits of security. As a result RSA, DSA and DH keys shorter than 15360 bits and ECC keys shorter than 512 bits are prohibited.</p>
-
-</dd>
-<dt id="default:-2">default: 2</dt>
-<dd>
-
-</dd>
-</dl>
-
-<p>The <i>securityLevel</i> option is only available when compiled with <b>OpenSSL 1.1.0</b> and later.</p>
-
-</dd>
-<dt id="requireCert-yes-no"><b>requireCert</b> = yes | no</dt>
-<dd>
-
-<p>require a client certificate for <i>verifyChain</i> or <i>verifyPeer</i></p>
-
-<p>With <i>requireCert</i> set to <i>no</i>, the <b>stunnel</b> server accepts client connections that did not present a certificate.</p>
-
-<p>Both <i>verifyChain = yes</i> and <i>verifyPeer = yes</i> imply <i>requireCert = yes</i>.</p>
-
-<p>default: no</p>
-
-</dd>
-<dt id="setgid-GROUP-Unix-only"><b>setgid</b> = GROUP (Unix only)</dt>
-<dd>
-
+<ul>
+<li><p>level 0</p>
+<p>Everything is permitted.</p></li>
+<li><p>level 1</p>
+<p>The security level corresponds to a minimum of 80 bits of security.
+Any parameters offering below 80 bits of security are excluded. As a
+result RSA, DSA and DH keys shorter than 1024 bits and ECC keys shorter
+than 160 bits are prohibited. All export cipher suites are prohibited
+since they all offer less than 80 bits of security. SSL version 2 is
+prohibited. Any cipher suite using MD5 for the MAC is also prohibited.
+Additionally, SSLv3, TLS 1.0, TLS 1.1 are all disabled for OpenSSL 3.0
+and later.</p></li>
+<li><p>level 2</p>
+<p>Security level set to 112 bits of security. As a result RSA, DSA and
+DH keys shorter than 2048 bits and ECC keys shorter than 224 bits are
+prohibited. In addition to the level 1 exclusions any cipher suite using
+RC4 is also prohibited. Compression is disabled. SSL version 3 is also
+not allowed for OpenSSL older than 3.0.</p></li>
+<li><p>level 3</p>
+<p>Security level set to 128 bits of security. As a result RSA, DSA and
+DH keys shorter than 3072 bits and ECC keys shorter than 256 bits are
+prohibited. In addition to the level 2 exclusions cipher suites not
+offering forward secrecy are prohibited. Session tickets are disabled.
+TLS versions below 1.1 are not permitted for OpenSSL older than
+3.0.</p></li>
+<li><p>level 4</p>
+<p>Security level set to 192 bits of security. As a result RSA, DSA and
+DH keys shorter than 7680 bits and ECC keys shorter than 384 bits are
+prohibited. Cipher suites using SHA1 for the MAC are prohibited. TLS
+versions below 1.2 are not permitted for OpenSSL older than
+3.0.</p></li>
+<li><p>level 5</p>
+<p>Security level set to 256 bits of security. As a result RSA, DSA and
+DH keys shorter than 15360 bits and ECC keys shorter than 512 bits are
+prohibited.</p></li>
+<li><p>default: 2</p></li>
+</ul>
+<p>The <em>securityLevel</em> option is only available when compiled
+with <strong>OpenSSL 1.1.0</strong> and later.</p></li>
+<li><p><strong>requireCert</strong> = yes | no</p>
+<p>require a client certificate for <em>verifyChain</em> or
+<em>verifyPeer</em></p>
+<p>With <em>requireCert</em> set to <em>no</em>, the
+<strong>stunnel</strong> server accepts client connections that did not
+present a certificate.</p>
+<p>Both <em>verifyChain = yes</em> and <em>verifyPeer = yes</em> imply
+<em>requireCert = yes</em>.</p>
+<p>default: no</p></li>
+<li><p><strong>setgid</strong> = GROUP (Unix only)</p>
 <p>Unix group id</p>
-
-<p>As a global option: setgid() to the specified group in daemon mode and clear all other groups.</p>
-
-<p>As a service-level option: set the group of the Unix socket specified with &quot;accept&quot;.</p>
-
-</dd>
-<dt id="setuid-USER-Unix-only"><b>setuid</b> = USER (Unix only)</dt>
-<dd>
-
+<p>As a global option: setgid() to the specified group in daemon mode
+and clear all other groups.</p>
+<p>As a service-level option: set the group of the Unix socket specified
+with "accept".</p></li>
+<li><p><strong>setuid</strong> = USER (Unix only)</p>
 <p>Unix user id</p>
-
-<p>As a global option: setuid() to the specified user in daemon mode.</p>
-
-<p>As a service-level option: set the owner of the Unix socket specified with &quot;accept&quot;.</p>
-
-</dd>
-<dt id="sessionCacheSize-NUM_ENTRIES"><b>sessionCacheSize</b> = NUM_ENTRIES</dt>
-<dd>
-
+<p>As a global option: setuid() to the specified user in daemon
+mode.</p>
+<p>As a service-level option: set the owner of the Unix socket specified
+with "accept".</p></li>
+<li><p><strong>sessionCacheSize</strong> = NUM_ENTRIES</p>
 <p>session cache size</p>
-
-<p><i>sessionCacheSize</i> specifies the maximum number of the internal session cache entries.</p>
-
-<p>The value of 0 can be used for unlimited size. It is not recommended for production use due to the risk of a memory exhaustion DoS attack.</p>
-
-</dd>
-<dt id="sessionCacheTimeout-TIMEOUT"><b>sessionCacheTimeout</b> = TIMEOUT</dt>
-<dd>
-
+<p><em>sessionCacheSize</em> specifies the maximum number of the
+internal session cache entries.</p>
+<p>The value of 0 can be used for unlimited size. It is not recommended
+for production use due to the risk of a memory exhaustion DoS
+attack.</p></li>
+<li><p><strong>sessionCacheTimeout</strong> = TIMEOUT</p>
 <p>session cache timeout</p>
-
-<p>This is the number of seconds to keep cached TLS sessions.</p>
-
-</dd>
-<dt id="sessionResume-yes-no"><b>sessionResume</b> = yes | no</dt>
-<dd>
-
+<p>This is the number of seconds to keep cached TLS sessions.</p></li>
+<li><p><strong>sessionResume</strong> = yes | no</p>
 <p>allow or disallow session resumption</p>
-
-<p>default: yes</p>
-
-</dd>
-<dt id="sessiond-HOST:PORT"><b>sessiond</b> = HOST:PORT</dt>
-<dd>
-
-<p>address of sessiond TLS cache server</p>
-
-</dd>
-<dt id="sni-SERVICE_NAME:SERVER_NAME_PATTERN-server-mode"><b>sni</b> = SERVICE_NAME:SERVER_NAME_PATTERN (server mode)</dt>
-<dd>
-
-<p>Use the service as a secondary service (a name-based virtual server) for Server Name Indication TLS extension (RFC 3546).</p>
-
-<p><i>SERVICE_NAME</i> specifies the primary service that accepts client connections with the <i>accept</i> option. <i>SERVER_NAME_PATTERN</i> specifies the host name to be redirected. The pattern may start with the &#39;*&#39; character, e.g. &#39;*.example.com&#39;. Multiple secondary services are normally specified for a single primary service. The <i>sni</i> option can also be specified more than once within a single secondary service.</p>
-
-<p>This service, as well as the primary service, may not be configured in client mode.</p>
-
-<p>The <i>connect</i> option of the secondary service is ignored when the <i>protocol</i> option is specified, as <i>protocol</i> connects to the remote host before TLS handshake.</p>
-
-<p>Libwrap checks (Unix only) are performed twice: with the primary service name after TCP connection is accepted, and with the secondary service name during the TLS handshake.</p>
-
-<p>The <i>sni</i> option is only available when compiled with <b>OpenSSL 1.0.0</b> and later.</p>
-
-</dd>
-<dt id="sni-SERVER_NAME-client-mode"><b>sni</b> = SERVER_NAME (client mode)</dt>
-<dd>
-
-<p>Use the parameter as the value of TLS Server Name Indication (RFC 3546) extension.</p>
-
+<p>default: yes</p></li>
+<li><p><strong>sessiond</strong> = HOST:PORT</p>
+<p>address of sessiond TLS cache server</p></li>
+<li><p><strong>sni</strong> = SERVICE_NAME:SERVER_NAME_PATTERN (server
+mode)</p>
+<p>Use the service as a secondary service (a name-based virtual server)
+for Server Name Indication TLS extension (RFC 3546).</p>
+<p><em>SERVICE_NAME</em> specifies the primary service that accepts
+client connections with the <em>accept</em> option.
+<em>SERVER_NAME_PATTERN</em> specifies the host name to be redirected.
+The pattern may start with the ‘*’ character, e.g. ‘*.example.com’.
+Multiple secondary services are normally specified for a single primary
+service. The <em>sni</em> option can also be specified more than once
+within a single secondary service.</p>
+<p>This service, as well as the primary service, may not be configured
+in client mode.</p>
+<p>The <em>connect</em> option of the secondary service is ignored when
+the <em>protocol</em> option is specified, as <em>protocol</em> connects
+to the remote host before TLS handshake.</p>
+<p>Libwrap checks (Unix only) are performed twice: with the primary
+service name after TCP connection is accepted, and with the secondary
+service name during the TLS handshake.</p>
+<p>The <em>sni</em> option is only available when compiled with
+<strong>OpenSSL 1.0.0</strong> and later.</p></li>
+<li><p><strong>sni</strong> = SERVER_NAME (client mode)</p>
+<p>Use the parameter as the value of TLS Server Name Indication (RFC
+3546) extension.</p>
 <p>Empty SERVER_NAME disables sending the SNI extension.</p>
-
-<p>The <i>sni</i> option is only available when compiled with <b>OpenSSL 1.0.0</b> and later.</p>
-
-</dd>
-<dt id="socket-a-l-r:OPTION-VALUE-:VALUE"><b>socket</b> = a|l|r:OPTION=VALUE[:VALUE]</dt>
-<dd>
-
+<p>The <em>sni</em> option is only available when compiled with
+<strong>OpenSSL 1.0.0</strong> and later.</p></li>
+<li><p><strong>socket</strong> = a|l|r:OPTION=VALUE[:VALUE]</p>
 <p>Set an option on the accept/local/remote socket</p>
-
-<p>The values for the linger option are l_onof:l_linger. The values for the time are tv_sec:tv_usec.</p>
-
+<p>The values for the linger option are l_onof:l_linger. The values for
+the time are tv_sec:tv_usec.</p>
 <p>Examples:</p>
-
 <pre><code>socket = l:SO_LINGER=1:60
     set one minute timeout for closing local socket
 socket = r:SO_OOBINLINE=yes
@@ -1273,165 +981,103 @@ socket = r:SO_OOBINLINE=yes
 socket = a:SO_REUSEADDR=no
     disable address reuse (enabled by default)
 socket = a:SO_BINDTODEVICE=lo
-    only accept connections on loopback interface</code></pre>
-
-</dd>
-<dt id="sslVersion-SSL_VERSION"><b>sslVersion</b> = SSL_VERSION</dt>
-<dd>
-
+    only accept connections on loopback interface</code></pre></li>
+<li><p><strong>sslVersion</strong> = SSL_VERSION</p>
 <p>select the TLS protocol version</p>
-
-<p>Supported versions: all, SSLv2, SSLv3, TLSv1, TLSv1.1, TLSv1.2, TLSv1.3</p>
-
-<p>Availability of specific protocols depends on the linked OpenSSL library. Older versions of OpenSSL do not support TLSv1.1, TLSv1.2 and TLSv1.3. Newer versions of OpenSSL do not support SSLv2.</p>
-
+<p>Supported versions: all, SSLv2, SSLv3, TLSv1, TLSv1.1, TLSv1.2,
+TLSv1.3</p>
+<p>Availability of specific protocols depends on the linked OpenSSL
+library. Older versions of OpenSSL do not support TLSv1.1, TLSv1.2 and
+TLSv1.3. Newer versions of OpenSSL do not support SSLv2.</p>
 <p>Obsolete SSLv2 and SSLv3 are currently disabled by default.</p>
-
 <p>Setting the option</p>
-
 <pre><code>sslVersion = SSL_VERSION</code></pre>
-
 <p>is equivalent to options</p>
-
 <pre><code>sslVersionMax = SSL_VERSION
 sslVersionMin = SSL_VERSION</code></pre>
-
-<p>when compiled with <b>OpenSSL 1.1.0</b> and later.</p>
-
-</dd>
-<dt id="sslVersionMax-SSL_VERSION"><b>sslVersionMax</b> = SSL_VERSION</dt>
-<dd>
-
+<p>when compiled with <strong>OpenSSL 1.1.0</strong> and later.</p></li>
+<li><p><strong>sslVersionMax</strong> = SSL_VERSION</p>
 <p>maximum supported protocol versions</p>
-
 <p>Supported versions: all, SSLv3, TLSv1, TLSv1.1, TLSv1.2, TLSv1.3</p>
-
-<p><i>all</i> enable protocol versions up to the highest version supported by the linked OpenSSL library.</p>
-
-<p>Availability of specific protocols depends on the linked OpenSSL library.</p>
-
-<p>The <i>sslVersionMax</i> option is only available when compiled with <b>OpenSSL 1.1.0</b> and later.</p>
-
-<p>default: all</p>
-
-</dd>
-<dt id="sslVersionMin-SSL_VERSION"><b>sslVersionMin</b> = SSL_VERSION</dt>
-<dd>
-
+<p><em>all</em> enable protocol versions up to the highest version
+supported by the linked OpenSSL library.</p>
+<p>Availability of specific protocols depends on the linked OpenSSL
+library.</p>
+<p>The <em>sslVersionMax</em> option is only available when compiled
+with <strong>OpenSSL 1.1.0</strong> and later.</p>
+<p>default: all</p></li>
+<li><p><strong>sslVersionMin</strong> = SSL_VERSION</p>
 <p>minimum supported protocol versions</p>
-
 <p>Supported versions: all, SSLv3, TLSv1, TLSv1.1, TLSv1.2, TLSv1.3</p>
-
-<p><i>all</i> enable protocol versions down to the lowest version supported by the linked OpenSSL library.</p>
-
-<p>Availability of specific protocols depends on the linked OpenSSL library.</p>
-
-<p>The <i>sslVersionMin</i> option is only available when compiled with <b>OpenSSL 1.1.0</b> and later.</p>
-
-<p>default: TLSv1</p>
-
-</dd>
-<dt id="stack-BYTES-except-for-FORK-model"><b>stack</b> = BYTES (except for FORK model)</dt>
-<dd>
-
+<p><em>all</em> enable protocol versions down to the lowest version
+supported by the linked OpenSSL library.</p>
+<p>Availability of specific protocols depends on the linked OpenSSL
+library.</p>
+<p>The <em>sslVersionMin</em> option is only available when compiled
+with <strong>OpenSSL 1.1.0</strong> and later.</p>
+<p>default: TLSv1</p></li>
+<li><p><strong>stack</strong> = BYTES (except for FORK model)</p>
 <p>CPU stack size of created threads</p>
-
-<p>Excessive thread stack size increases virtual memory usage. Insufficient thread stack size may cause application crashes.</p>
-
-<p>default: 65536 bytes (sufficient for all platforms we tested)</p>
-
-</dd>
-<dt id="ticketKeySecret-SECRET"><b>ticketKeySecret</b> = SECRET</dt>
-<dd>
-
-<p>hexadecimal symmetric key used for session ticket confidentiality protection</p>
-
-<p>Session tickets defined in RFC 5077 provide an enhanced session resumption capability, where the server-side caching is not required to maintain per session state.</p>
-
-<p>Combining <i>ticketKeySecret</i> and <i>ticketMacSecret</i> options allow to resume a negotiated session on other cluster nodes, or to resume a negotiated session after server restart.</p>
-
-<p>The key is required to be either 16 or 32 bytes long, which implies exactly 32 or 64 hexadecimal digits. Colons may optionally be used between two-character hexadecimal bytes.</p>
-
+<p>Excessive thread stack size increases virtual memory usage.
+Insufficient thread stack size may cause application crashes.</p>
+<p>default: 65536 bytes (sufficient for all platforms we
+tested)</p></li>
+<li><p><strong>ticketKeySecret</strong> = SECRET</p>
+<p>hexadecimal symmetric key used for session ticket confidentiality
+protection</p>
+<p>Session tickets defined in RFC 5077 provide an enhanced session
+resumption capability, where the server-side caching is not required to
+maintain per session state.</p>
+<p>Combining <em>ticketKeySecret</em> and <em>ticketMacSecret</em>
+options allow to resume a negotiated session on other cluster nodes, or
+to resume a negotiated session after server restart.</p>
+<p>The key is required to be either 16 or 32 bytes long, which implies
+exactly 32 or 64 hexadecimal digits. Colons may optionally be used
+between two-character hexadecimal bytes.</p>
 <p>This option only works in server mode.</p>
-
-<p>The <i>ticketKeySecret</i> option is only available when compiled with <b>OpenSSL 1.0.0</b> and later.</p>
-
-<p>Disabling <i>NO_TICKET</i> option is required for the ticket support in OpenSSL older than 1.1.1, but note that this option is incompatible with the <i>redirect</i> option.</p>
-
-</dd>
-<dt id="ticketMacSecret-SECRET"><b>ticketMacSecret</b> = SECRET</dt>
-<dd>
-
-<p>hexadecimal symmetric key used for session ticket integrity protection</p>
-
-<p>The key is required to be either 16 or 32 bytes long, which implies exactly 32 or 64 hexadecimal digits. Colons may optionally be used between two-character hexadecimal bytes.</p>
-
+<p>The <em>ticketKeySecret</em> option is only available when compiled
+with <strong>OpenSSL 1.0.0</strong> and later.</p>
+<p>Disabling <em>NO_TICKET</em> option is required for the ticket
+support in OpenSSL older than 1.1.1, but note that this option is
+incompatible with the <em>redirect</em> option.</p></li>
+<li><p><strong>ticketMacSecret</strong> = SECRET</p>
+<p>hexadecimal symmetric key used for session ticket integrity
+protection</p>
+<p>The key is required to be either 16 or 32 bytes long, which implies
+exactly 32 or 64 hexadecimal digits. Colons may optionally be used
+between two-character hexadecimal bytes.</p>
 <p>This option only works in server mode.</p>
-
-<p>The <i>ticketMacSecret</i> option is only available when compiled with <b>OpenSSL 1.0.0</b> and later.</p>
-
-</dd>
-<dt id="TIMEOUTbusy-SECONDS"><b>TIMEOUTbusy</b> = SECONDS</dt>
-<dd>
-
-<p>time to wait for expected data</p>
-
-</dd>
-<dt id="TIMEOUTclose-SECONDS"><b>TIMEOUTclose</b> = SECONDS</dt>
-<dd>
-
-<p>time to wait for close_notify (set to 0 for buggy MSIE)</p>
-
-</dd>
-<dt id="TIMEOUTconnect-SECONDS"><b>TIMEOUTconnect</b> = SECONDS</dt>
-<dd>
-
-<p>time to wait to connect a remote host</p>
-
-</dd>
-<dt id="TIMEOUTidle-SECONDS"><b>TIMEOUTidle</b> = SECONDS</dt>
-<dd>
-
-<p>time to keep an idle connection</p>
-
-</dd>
-<dt id="TIMEOUTocsp-SECONDS"><b>TIMEOUTocsp</b> = SECONDS</dt>
-<dd>
-
-<p>time to wait to connect an OCSP responder</p>
-
-</dd>
-<dt id="transparent-none-source-destination-both-Unix-only"><b>transparent</b> = none | source | destination | both (Unix only)</dt>
-<dd>
-
+<p>The <em>ticketMacSecret</em> option is only available when compiled
+with <strong>OpenSSL 1.0.0</strong> and later.</p></li>
+<li><p><strong>TIMEOUTbusy</strong> = SECONDS</p>
+<p>time to wait for expected data</p></li>
+<li><p><strong>TIMEOUTclose</strong> = SECONDS</p>
+<p>time to wait for close_notify (set to 0 for buggy MSIE)</p></li>
+<li><p><strong>TIMEOUTconnect</strong> = SECONDS</p>
+<p>time to wait to connect a remote host</p></li>
+<li><p><strong>TIMEOUTidle</strong> = SECONDS</p>
+<p>time to keep an idle connection</p></li>
+<li><p><strong>TIMEOUTocsp</strong> = SECONDS</p>
+<p>time to wait to connect an OCSP responder</p></li>
+<li><p><strong>transparent</strong> = none | source | destination | both
+(Unix only)</p>
 <p>enable transparent proxy support on selected platforms</p>
-
 <p>Supported values:</p>
-
-<dl>
-
-<dt id="none"><i>none</i></dt>
-<dd>
-
-<p>Disable transparent proxy support. This is the default.</p>
-
-</dd>
-<dt id="source"><i>source</i></dt>
-<dd>
-
-<p>Re-write the address to appear as if a wrapped daemon is connecting from the TLS client machine instead of the machine running <b>stunnel</b>.</p>
-
+<ul>
+<li><p><em>none</em></p>
+<p>Disable transparent proxy support. This is the default.</p></li>
+<li><p><em>source</em></p>
+<p>Re-write the address to appear as if a wrapped daemon is connecting
+from the TLS client machine instead of the machine running
+<strong>stunnel</strong>.</p>
 <p>This option is currently available in:</p>
-
-<dl>
-
-<dt id="Remote-mode-connect-option-on-Linux-2.6.28">Remote mode (<i>connect</i> option) on <i>Linux &gt;=2.6.28</i></dt>
-<dd>
-
-<p>This configuration requires <b>stunnel</b> to be executed as root and without the <i>setuid</i> option.</p>
-
-<p>This configuration requires the following setup for iptables and routing (possibly in /etc/rc.local or equivalent file):</p>
-
+<ul>
+<li><p>Remote mode (<em>connect</em> option) on <em>Linux
+&gt;=2.6.28</em></p>
+<p>This configuration requires <strong>stunnel</strong> to be executed
+as root and without the <em>setuid</em> option.</p>
+<p>This configuration requires the following setup for iptables and
+routing (possibly in /etc/rc.local or equivalent file):</p>
 <pre><code>iptables -t mangle -N DIVERT
 iptables -t mangle -A PREROUTING -p tcp -m socket -j DIVERT
 iptables -t mangle -A DIVERT -j MARK --set-mark 1
@@ -1439,282 +1085,171 @@ iptables -t mangle -A DIVERT -j ACCEPT
 ip rule add fwmark 1 lookup 100
 ip route add local 0.0.0.0/0 dev lo table 100
 echo 0 &gt;/proc/sys/net/ipv4/conf/lo/rp_filter</code></pre>
-
-<p><b>stunnel</b> must also to be executed as root and without the <i>setuid</i> option.</p>
-
-</dd>
-<dt id="Remote-mode-connect-option-on-Linux-2.2.x">Remote mode (<i>connect</i> option) on <i>Linux 2.2.x</i></dt>
-<dd>
-
-<p>This configuration requires the kernel to be compiled with the <i>transparent proxy</i> option. Connected service must be installed on a separate host. Routing towards the clients has to go through the <b>stunnel</b> box.</p>
-
-<p><b>stunnel</b> must also to be executed as root and without the <i>setuid</i> option.</p>
-
-</dd>
-<dt id="Remote-mode-connect-option-on-FreeBSD-8.0">Remote mode (<i>connect</i> option) on <i>FreeBSD &gt;=8.0</i></dt>
-<dd>
-
-<p>This configuration requires additional firewall and routing setup. <b>stunnel</b> must also to be executed as root and without the <i>setuid</i> option.</p>
-
-</dd>
-<dt id="Local-mode-exec-option">Local mode (<i>exec</i> option)</dt>
-<dd>
-
-<p>This configuration works by pre-loading the <i>libstunnel.so</i> shared library. _RLD_LIST environment variable is used on Tru64, and LD_PRELOAD variable on other platforms.</p>
-
-</dd>
-</dl>
-
-</dd>
-<dt id="destination"><i>destination</i></dt>
-<dd>
-
-<p>The original destination is used instead of the <i>connect</i> option.</p>
-
+<p><strong>stunnel</strong> must also to be executed as root and without
+the <em>setuid</em> option.</p></li>
+<li><p>Remote mode (<em>connect</em> option) on <em>Linux 2.2.x</em></p>
+<p>This configuration requires the kernel to be compiled with the
+<em>transparent proxy</em> option. Connected service must be installed
+on a separate host. Routing towards the clients has to go through the
+<strong>stunnel</strong> box.</p>
+<p><strong>stunnel</strong> must also to be executed as root and without
+the <em>setuid</em> option.</p></li>
+<li><p>Remote mode (<em>connect</em> option) on <em>FreeBSD
+&gt;=8.0</em></p>
+<p>This configuration requires additional firewall and routing setup.
+<strong>stunnel</strong> must also to be executed as root and without
+the <em>setuid</em> option.</p></li>
+<li><p>Local mode (<em>exec</em> option)</p>
+<p>This configuration works by pre-loading the <em>libstunnel.so</em>
+shared library. _RLD_LIST environment variable is used on Tru64, and
+LD_PRELOAD variable on other platforms.</p></li>
+</ul></li>
+<li><p><em>destination</em></p>
+<p>The original destination is used instead of the <em>connect</em>
+option.</p>
 <p>A service section for transparent destination may look like this:</p>
-
 <pre><code>[transparent]
 client = yes
 accept = &lt;stunnel_port&gt;
 transparent = destination</code></pre>
-
-<p>This configuration requires iptables setup to work, possibly in /etc/rc.local or equivalent file.</p>
-
+<p>This configuration requires iptables setup to work, possibly in
+/etc/rc.local or equivalent file.</p>
 <p>For a connect target installed on the same host:</p>
-
 <pre><code>/sbin/iptables -t nat -I OUTPUT -p tcp --dport &lt;redirected_port&gt; \
     -m ! --uid-owner &lt;stunnel_user_id&gt; \
     -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
-
 <p>For a connect target installed on a remote host:</p>
-
 <pre><code>/sbin/iptables -I INPUT -i eth0 -p tcp --dport &lt;stunnel_port&gt; -j ACCEPT
 /sbin/iptables -t nat -I PREROUTING -p tcp --dport &lt;redirected_port&gt; \
     -i eth0 -j DNAT --to-destination &lt;local_ip&gt;:&lt;stunnel_port&gt;</code></pre>
-
-<p>The transparent destination option is currently only supported on Linux.</p>
-
-</dd>
-<dt id="both"><i>both</i></dt>
-<dd>
-
-<p>Use both <i>source</i> and <i>destination</i> transparent proxy.</p>
-
-</dd>
-</dl>
-
-<p>Two legacy options are also supported for backward compatibility:</p>
-
-<dl>
-
-<dt id="yes"><i>yes</i></dt>
-<dd>
-
-<p>This option has been renamed to <i>source</i>.</p>
-
-</dd>
-<dt id="no"><i>no</i></dt>
-<dd>
-
-<p>This option has been renamed to <i>none</i>.</p>
-
-</dd>
-</dl>
-
-</dd>
-<dt id="verify-LEVEL"><b>verify</b> = LEVEL</dt>
-<dd>
-
-<p>verify the peer certificate</p>
-
-<p>This option is obsolete and should be replaced with the <i>verifyChain</i> and <i>verifyPeer</i> options.</p>
-
-<dl>
-
-<dt id="level-01">level 0</dt>
-<dd>
-
-<p>Request and ignore the peer certificate chain.</p>
-
-</dd>
-<dt id="level-11">level 1</dt>
-<dd>
-
-<p>Verify the peer certificate chain if present.</p>
-
-</dd>
-<dt id="level-21">level 2</dt>
-<dd>
-
-<p>Verify the peer certificate chain.</p>
-
-</dd>
-<dt id="level-31">level 3</dt>
-<dd>
-
-<p>Verify the peer certificate chain and the end-entity (leaf) peer certificate against a locally installed certificate.</p>
-
-</dd>
-<dt id="level-41">level 4</dt>
-<dd>
-
-<p>Ignore the peer certificate chain and only verify the end-entity (leaf) peer certificate against a locally installed certificate.</p>
-
-</dd>
-<dt id="default">default</dt>
-<dd>
-
-<p>No verify.</p>
-
-</dd>
-</dl>
-
-</dd>
-<dt id="verifyChain-yes-no"><b>verifyChain</b> = yes | no</dt>
-<dd>
-
-<p>verify the peer certificate chain starting from the root CA</p>
-
-<p>For server certificate verification it is essential to also require a specific certificate with <i>checkHost</i> or <i>checkIP</i>.</p>
-
-<p>The self-signed root CA certificate needs to be stored either in the file specified with <i>CAfile</i>, or in the directory specified with <i>CApath</i>.</p>
-
-<p>default: no</p>
-
-</dd>
-<dt id="verifyPeer-yes-no"><b>verifyPeer</b> = yes | no</dt>
-<dd>
-
-<p>verify the end-entity (leaf) peer certificate</p>
-
-<p>The end-entity (leaf) peer certificate needs to be stored either in the file specified with <i>CAfile</i>, or in the directory specified with <i>CApath</i>.</p>
-
-<p>default: no</p>
-
-</dd>
-</dl>
-
-<a href="#_podtop_"><h1 id="RETURN-VALUE">RETURN VALUE</h1></a>
-
-<p><b>stunnel</b> returns zero on success, non-zero on error.</p>
-
-<a href="#_podtop_"><h1 id="SIGNALS">SIGNALS</h1></a>
-
-<p>The following signals can be used to control <b>stunnel</b> in Unix environment:</p>
-
-<dl>
-
-<dt id="SIGHUP">SIGHUP</dt>
-<dd>
-
-<p>Force a reload of the configuration file.</p>
-
-<p>Some global options will not be reloaded:</p>
-
-<ul>
-
-<li><p>chroot</p>
-
-</li>
-<li><p>foreground</p>
-
-</li>
-<li><p>pid</p>
-
-</li>
-<li><p>setgid</p>
-
-</li>
-<li><p>setuid</p>
-
-</li>
+<p>The transparent destination option is currently only supported on
+Linux.</p></li>
+<li><p><em>both</em></p>
+<p>Use both <em>source</em> and <em>destination</em> transparent
+proxy.</p></li>
 </ul>
-
-<p>The use of the &#39;setuid&#39; option will also prevent <b>stunnel</b> from binding to privileged (&lt;1024) ports during configuration reloading.</p>
-
-<p>When the &#39;chroot&#39; option is used, <b>stunnel</b> will look for all its files (including the configuration file, certificates, the log file and the pid file) within the chroot jail.</p>
-
-</dd>
-<dt id="SIGUSR1">SIGUSR1</dt>
-<dd>
-
-<p>Close and reopen the <b>stunnel</b> log file. This function can be used for log rotation.</p>
-
-</dd>
-<dt id="SIGUSR2">SIGUSR2</dt>
-<dd>
-
-<p>Log the list of active connections.</p>
-
-</dd>
-<dt id="SIGTERM-SIGQUIT-SIGINT">SIGTERM, SIGQUIT, SIGINT</dt>
-<dd>
-
-<p>Shut <b>stunnel</b> down.</p>
-
-</dd>
-</dl>
-
-<p>The result of sending any other signals to the server is undefined.</p>
-
-<a href="#_podtop_"><h1 id="EXAMPLES">EXAMPLES</h1></a>
-
-<p>In order to provide TLS encapsulation to your local <i>imapd</i> service, use:</p>
-
+<p>Two legacy options are also supported for backward compatibility:</p>
+<ul>
+<li><p><em>yes</em></p>
+<p>This option has been renamed to <em>source</em>.</p></li>
+<li><p><em>no</em></p>
+<p>This option has been renamed to <em>none</em>.</p></li>
+</ul></li>
+<li><p><strong>verify</strong> = LEVEL</p>
+<p>verify the peer certificate</p>
+<p>This option is obsolete and should be replaced with the
+<em>verifyChain</em> and <em>verifyPeer</em> options.</p>
+<ul>
+<li><p>level 0</p>
+<p>Request and ignore the peer certificate chain.</p></li>
+<li><p>level 1</p>
+<p>Verify the peer certificate chain if present.</p></li>
+<li><p>level 2</p>
+<p>Verify the peer certificate chain.</p></li>
+<li><p>level 3</p>
+<p>Verify the peer certificate chain and the end-entity (leaf) peer
+certificate against a locally installed certificate.</p></li>
+<li><p>level 4</p>
+<p>Ignore the peer certificate chain and only verify the end-entity
+(leaf) peer certificate against a locally installed
+certificate.</p></li>
+<li><p>default</p>
+<p>No verify.</p></li>
+</ul></li>
+<li><p><strong>verifyChain</strong> = yes | no</p>
+<p>verify the peer certificate chain starting from the root CA</p>
+<p>For server certificate verification it is essential to also require a
+specific certificate with <em>checkHost</em> or <em>checkIP</em>.</p>
+<p>The self-signed root CA certificate needs to be stored either in the
+file specified with <em>CAfile</em>, or in the directory specified with
+<em>CApath</em>.</p>
+<p>default: no</p></li>
+<li><p><strong>verifyPeer</strong> = yes | no</p>
+<p>verify the end-entity (leaf) peer certificate</p>
+<p>The end-entity (leaf) peer certificate needs to be stored either in
+the file specified with <em>CAfile</em>, or in the directory specified
+with <em>CApath</em>.</p>
+<p>default: no</p></li>
+</ul>
+<h1 id="return-value">RETURN VALUE</h1>
+<p><strong>stunnel</strong> returns zero on success, non-zero on
+error.</p>
+<h1 id="signals">SIGNALS</h1>
+<p>The following signals can be used to control <strong>stunnel</strong>
+in Unix environment:</p>
+<ul>
+<li><p>SIGHUP</p>
+<p>Force a reload of the configuration file.</p>
+<p>Some global options will not be reloaded:</p>
+<ul>
+<li><p>chroot</p></li>
+<li><p>foreground</p></li>
+<li><p>pid</p></li>
+<li><p>setgid</p></li>
+<li><p>setuid</p></li>
+</ul>
+<p>The use of the ‘setuid’ option will also prevent
+<strong>stunnel</strong> from binding to privileged (&lt;1024) ports
+during configuration reloading.</p>
+<p>When the ‘chroot’ option is used, <strong>stunnel</strong> will look
+for all its files (including the configuration file, certificates, the
+log file and the pid file) within the chroot jail.</p></li>
+<li><p>SIGUSR1</p>
+<p>Close and reopen the <strong>stunnel</strong> log file. This function
+can be used for log rotation.</p></li>
+<li><p>SIGUSR2</p>
+<p>Log the list of active connections.</p></li>
+<li><p>SIGTERM, SIGQUIT, SIGINT</p>
+<p>Shut <strong>stunnel</strong> down.</p></li>
+</ul>
+<p>The result of sending any other signals to the server is
+undefined.</p>
+<h1 id="examples">EXAMPLES</h1>
+<p>In order to provide TLS encapsulation to your local <em>imapd</em>
+service, use:</p>
 <pre><code>[imapd]
 accept = 993
 exec = /usr/sbin/imapd
 execArgs = imapd</code></pre>
-
 <p>or in remote mode:</p>
-
 <pre><code>[imapd]
 accept = 993
 connect = 143</code></pre>
-
-<p>In order to let your local e-mail client connect to a TLS-enabled <i>imapd</i> service on another server, configure the e-mail client to connect to localhost on port 119 and use:</p>
-
+<p>In order to let your local e-mail client connect to a TLS-enabled
+<em>imapd</em> service on another server, configure the e-mail client to
+connect to localhost on port 119 and use:</p>
 <pre><code>[imap]
 client = yes
 accept = 143
 connect = servername:993</code></pre>
-
-<p>If you want to provide tunneling to your <i>pppd</i> daemon on port 2020, use something like:</p>
-
+<p>If you want to provide tunneling to your <em>pppd</em> daemon on port
+2020, use something like:</p>
 <pre><code>[vpn]
 accept = 2020
 exec = /usr/sbin/pppd
 execArgs = pppd local
 pty = yes</code></pre>
-
-<p>If you want to use <b>stunnel</b> in <i>inetd</i> mode to launch your imapd process, you&#39;d use this <i>stunnel.conf</i>. Note there must be no <i>[service_name]</i> section.</p>
-
+<p>If you want to use <strong>stunnel</strong> in <em>inetd</em> mode to
+launch your imapd process, you’d use this <em>stunnel.conf</em>. Note
+there must be no <em>[service_name]</em> section.</p>
 <pre><code>exec = /usr/sbin/imapd
 execArgs = imapd</code></pre>
-
 <p>To setup SOCKS VPN configure the following client service:</p>
-
 <pre><code>[socks_client]
 client = yes
 accept = 127.0.0.1:1080
 connect = vpn_server:9080
 verifyPeer = yes
 CAfile = stunnel.pem</code></pre>
-
 <p>The corresponding configuration on the vpn_server host:</p>
-
 <pre><code>[socks_server]
 protocol = socks
 accept = 9080
 cert = stunnel.pem
 key = stunnel.key</code></pre>
-
 <p>Now test your configuration on the client machine with:</p>
-
 <pre><code>curl --socks4a localhost http://www.example.com/</code></pre>
-
 <p>An example server mode SNI configuration:</p>
-
 <pre><code>[virtual]
 ; primary service
 accept = 443
@@ -1734,9 +1269,11 @@ cert = server2.pem
 connect = server2.internal.mydomain.com:8082
 verifyPeer = yes
 CAfile = server2-allowed-clients.pem</code></pre>
-
-<p>An example of advanced engine configuration allows for authentication with private keys stored in the Windows certificate store (Windows only). With the CAPI engine you don&#39;t need to manually select the client key to use. The client key is automatically selected based on the list of CAs trusted by the server.</p>
-
+<p>An example of advanced engine configuration allows for authentication
+with private keys stored in the Windows certificate store (Windows
+only). With the CAPI engine you don’t need to manually select the client
+key to use. The client key is automatically selected based on the list
+of CAs trusted by the server.</p>
 <pre><code>engine = capi
 
 [service]
@@ -1744,9 +1281,8 @@ engineId = capi
 client = yes
 accept = 127.0.0.1:8080
 connect = example.com:8443</code></pre>
-
-<p>An example of advanced engine configuration to use the certificate and the corresponding private key from a pkcs11 engine:</p>
-
+<p>An example of advanced engine configuration to use the certificate
+and the corresponding private key from a pkcs11 engine:</p>
 <pre><code>engine = pkcs11
 engineCtrl = MODULE_PATH:opensc-pkcs11.so
 engineCtrl = PIN:123456
@@ -1758,9 +1294,8 @@ accept = 127.0.0.1:8080
 connect = example.com:843
 cert = pkcs11:token=MyToken;object=MyCert
 key = pkcs11:token=MyToken;object=MyKey</code></pre>
-
-<p>An example of advanced engine configuration to use the certificate and the corresponding private key from a SoftHSM token:</p>
-
+<p>An example of advanced engine configuration to use the certificate
+and the corresponding private key from a SoftHSM token:</p>
 <pre><code>engine = pkcs11
 engineCtrl = MODULE_PATH:softhsm2.dll
 engineCtrl = PIN:12345
@@ -1771,11 +1306,9 @@ client = yes
 accept = 127.0.0.1:8080
 connect = example.com:843
 cert = pkcs11:token=MyToken;object=KeyCert</code></pre>
-
-<p>An example of advanced provider configuration to use the certificate and the corresponding private key from a `pkcs11prov` provider:</p>
-
+<p>An example of advanced provider configuration to use the certificate
+and the corresponding private key from a `pkcs11prov` provider:</p>
 <p>Note: requires OpenSSL 3.0 or later</p>
-
 <pre><code>setEnv = PKCS11_MODULE_PATH=opensc-pkcs11.dll
 setEnv = PKCS11_PIN:123456
 provider = pkcs11prov
@@ -1786,9 +1319,7 @@ accept = 127.0.0.1:8080
 connect = example.com:843
 cert = pkcs11:token=MyToken;object=MyCert
 key = pkcs11:token=MyToken;object=MyKey</code></pre>
-
 <p>Note: requires OpenSSL 3.5 or later</p>
-
 <pre><code>provider = pkcs11prov
 providerParameter = pkcs11prov:pkcs11_module=opensc-pkcs11.dll
 providerParameter = pkcs11prov:pin=123456
@@ -1799,150 +1330,112 @@ accept = 127.0.0.1:8080
 connect = example.com:843
 cert = pkcs11:token=MyToken;object=MyCert
 key = pkcs11:token=MyToken;object=MyKey</code></pre>
-
-<p>On Windows, the PKCS#11 library must be placed in the `ossl-modules` directory, or a full absolute path must be provided in `PKCS11_MODULE_PATH` or `pkcs11_module` parameter.</p>
-
-<a href="#_podtop_"><h1 id="NOTES">NOTES</h1></a>
-
-<h2 id="RESTRICTIONS">RESTRICTIONS</h2>
-
-<p><b>stunnel</b> cannot be used for the FTP daemon because of the nature of the FTP protocol which utilizes multiple ports for data transfers. There are available TLS-enabled versions of FTP and telnet daemons, however.</p>
-
-<h2 id="INETD-MODE">INETD MODE</h2>
-
-<p>The most common use of <b>stunnel</b> is to listen on a network port and establish communication with either a new port via the connect option, or a new program via the <i>exec</i> option. However there is a special case when you wish to have some other program accept incoming connections and launch <b>stunnel</b>, for example with <i>inetd</i>, <i>xinetd</i>, or <i>tcpserver</i>.</p>
-
-<p>For example, if you have the following line in <i>inetd.conf</i>:</p>
-
+<p>On Windows, the PKCS#11 library must be placed in the `ossl-modules`
+directory, or a full absolute path must be provided in
+`PKCS11_MODULE_PATH` or `pkcs11_module` parameter.</p>
+<h1 id="notes">NOTES</h1>
+<h2 id="restrictions">RESTRICTIONS</h2>
+<p><strong>stunnel</strong> cannot be used for the FTP daemon because of
+the nature of the FTP protocol which utilizes multiple ports for data
+transfers. There are available TLS-enabled versions of FTP and telnet
+daemons, however.</p>
+<h2 id="inetd-mode">INETD MODE</h2>
+<p>The most common use of <strong>stunnel</strong> is to listen on a
+network port and establish communication with either a new port via the
+connect option, or a new program via the <em>exec</em> option. However
+there is a special case when you wish to have some other program accept
+incoming connections and launch <strong>stunnel</strong>, for example
+with <em>inetd</em>, <em>xinetd</em>, or <em>tcpserver</em>.</p>
+<p>For example, if you have the following line in
+<em>inetd.conf</em>:</p>
 <pre><code>imaps stream tcp nowait root @bindir@/stunnel stunnel @sysconfdir@/stunnel/imaps.conf</code></pre>
-
-<p>In these cases, the <i>inetd</i>-style program is responsible for binding a network socket (<i>imaps</i> above) and handing it to <b>stunnel</b> when a connection is received. Thus you do not want <b>stunnel</b> to have any <i>accept</i> option. All the <i>Service Level Options</i> should be placed in the global options section, and no <i>[service_name]</i> section will be present. See the <i>EXAMPLES</i> section for example configurations.</p>
-
-<h2 id="CERTIFICATES">CERTIFICATES</h2>
-
-<p>Each TLS-enabled daemon needs to present a valid X.509 certificate to the peer. It also needs a private key to decrypt the incoming data. The easiest way to obtain a certificate and a key is to generate them with the free <b>OpenSSL</b> package. You can find more information on certificates generation on pages listed below.</p>
-
-<p>The <i>.pem</i> file should contain the unencrypted private key and a signed certificate (not certificate request). So the file should look like this:</p>
-
+<p>In these cases, the <em>inetd</em>-style program is responsible for
+binding a network socket (<em>imaps</em> above) and handing it to
+<strong>stunnel</strong> when a connection is received. Thus you do not
+want <strong>stunnel</strong> to have any <em>accept</em> option. All
+the <em>Service Level Options</em> should be placed in the global
+options section, and no <em>[service_name]</em> section will be present.
+See the <em>EXAMPLES</em> section for example configurations.</p>
+<h2 id="certificates">CERTIFICATES</h2>
+<p>Each TLS-enabled daemon needs to present a valid X.509 certificate to
+the peer. It also needs a private key to decrypt the incoming data. The
+easiest way to obtain a certificate and a key is to generate them with
+the free <strong>OpenSSL</strong> package. You can find more information
+on certificates generation on pages listed below.</p>
+<p>The <em>.pem</em> file should contain the unencrypted private key and
+a signed certificate (not certificate request). So the file should look
+like this:</p>
 <pre><code>-----BEGIN RSA PRIVATE KEY-----
 [encoded key]
 -----END RSA PRIVATE KEY-----
 -----BEGIN CERTIFICATE-----
 [encoded certificate]
 -----END CERTIFICATE-----</code></pre>
-
-<h2 id="RANDOMNESS">RANDOMNESS</h2>
-
-<p><b>stunnel</b> needs to seed the PRNG (pseudo-random number generator) in order for TLS to use good randomness. The following sources are loaded in order until sufficient random data has been gathered:</p>
-
+<h2 id="randomness">RANDOMNESS</h2>
+<p><strong>stunnel</strong> needs to seed the PRNG (pseudo-random number
+generator) in order for TLS to use good randomness. The following
+sources are loaded in order until sufficient random data has been
+gathered:</p>
 <ul>
-
-<li><p>The file specified with the <i>RNDfile</i> flag.</p>
-
-</li>
-<li><p>The file specified by the RANDFILE environment variable, if set.</p>
-
-</li>
-<li><p>The file .rnd in your home directory, if RANDFILE not set.</p>
-
-</li>
-<li><p>The file specified with &#39;--with-random&#39; at compile time.</p>
-
-</li>
-<li><p>The contents of the screen if running on Windows.</p>
-
-</li>
-<li><p>The egd socket specified with the <i>EGD</i> flag.</p>
-
-</li>
-<li><p>The egd socket specified with &#39;--with-egd-sock&#39; at compile time.</p>
-
-</li>
-<li><p>The /dev/urandom device.</p>
-
-</li>
+<li><p>The file specified with the <em>RNDfile</em> flag.</p></li>
+<li><p>The file specified by the RANDFILE environment variable, if
+set.</p></li>
+<li><p>The file .rnd in your home directory, if RANDFILE not
+set.</p></li>
+<li><p>The file specified with ‘--with-random’ at compile time.</p></li>
+<li><p>The contents of the screen if running on Windows.</p></li>
+<li><p>The egd socket specified with the <em>EGD</em> flag.</p></li>
+<li><p>The egd socket specified with ‘--with-egd-sock’ at compile
+time.</p></li>
+<li><p>The /dev/urandom device.</p></li>
 </ul>
-
-<p>Note that on Windows machines that do not have console user interaction (mouse movements, creating windows, etc.) the screen contents are not variable enough to be sufficient, and you should provide a random file for use with the <i>RNDfile</i> flag.</p>
-
-<p>Note that the file specified with the <i>RNDfile</i> flag should contain random data -- that means it should contain different information each time <b>stunnel</b> is run. This is handled automatically unless the <i>RNDoverwrite</i> flag is used. If you wish to update this file manually, the <i>openssl rand</i> command in recent versions of <b>OpenSSL</b>, would be useful.</p>
-
-<p>Important note: If /dev/urandom is available, <b>OpenSSL</b> often seeds the PRNG with it while checking the random state. On systems with /dev/urandom <b>OpenSSL</b> is likely to use it even though it is listed at the very bottom of the list above. This is the behaviour of <b>OpenSSL</b> and not <b>stunnel</b>.</p>
-
-<h2 id="DH-PARAMETERS">DH PARAMETERS</h2>
-
-<p><b>stunnel</b> 4.40 and later contains hardcoded 2048-bit DH parameters. Starting with <b>stunnel</b> 5.18, these hardcoded DH parameters are replaced every 24 hours with autogenerated temporary DH parameters. DH parameter generation may take several minutes.</p>
-
-<p>Alternatively, it is possible to specify static DH parameters in the certificate file, which disables generating temporary DH parameters:</p>
-
+<p>Note that on Windows machines that do not have console user
+interaction (mouse movements, creating windows, etc.) the screen
+contents are not variable enough to be sufficient, and you should
+provide a random file for use with the <em>RNDfile</em> flag.</p>
+<p>Note that the file specified with the <em>RNDfile</em> flag should
+contain random data -- that means it should contain different
+information each time <strong>stunnel</strong> is run. This is handled
+automatically unless the <em>RNDoverwrite</em> flag is used. If you wish
+to update this file manually, the <em>openssl rand</em> command in
+recent versions of <strong>OpenSSL</strong>, would be useful.</p>
+<p>Important note: If /dev/urandom is available,
+<strong>OpenSSL</strong> often seeds the PRNG with it while checking the
+random state. On systems with /dev/urandom <strong>OpenSSL</strong> is
+likely to use it even though it is listed at the very bottom of the list
+above. This is the behaviour of <strong>OpenSSL</strong> and not
+<strong>stunnel</strong>.</p>
+<h2 id="dh-parameters">DH PARAMETERS</h2>
+<p><strong>stunnel</strong> 4.40 and later contains hardcoded 2048-bit
+DH parameters. Starting with <strong>stunnel</strong> 5.18, these
+hardcoded DH parameters are replaced every 24 hours with autogenerated
+temporary DH parameters. DH parameter generation may take several
+minutes.</p>
+<p>Alternatively, it is possible to specify static DH parameters in the
+certificate file, which disables generating temporary DH parameters:</p>
 <pre><code>openssl dhparam 2048 &gt;&gt; stunnel.pem</code></pre>
-
-<a href="#_podtop_"><h1 id="FILES">FILES</h1></a>
-
-<dl>
-
-<dt id="sysconfdir-stunnel-stunnel.conf"><i>@sysconfdir@/stunnel/stunnel.conf</i></dt>
-<dd>
-
-<p><b>stunnel</b> configuration file</p>
-
-</dd>
-</dl>
-
-<a href="#_podtop_"><h1 id="BUGS">BUGS</h1></a>
-
-<p>The <i>execArgs</i> option and the Win32 command line do not support quoting.</p>
-
-<a href="#_podtop_"><h1 id="SEE-ALSO">SEE ALSO</h1></a>
-
-<dl>
-
-<dt id="tcpd-8"><a href="http://man.he.net/man8/tcpd">tcpd(8)</a></dt>
-<dd>
-
-<p>access control facility for internet services</p>
-
-</dd>
-<dt id="inetd-8"><a href="http://man.he.net/man8/inetd">inetd(8)</a></dt>
-<dd>
-
-<p>internet &#39;super-server&#39;</p>
-
-</dd>
-<dt id="http:-www.stunnel.org"><i>http://www.stunnel.org/</i></dt>
-<dd>
-
-<p><b>stunnel</b> homepage</p>
-
-</dd>
-<dt id="http:-www.openssl.org"><i>http://www.openssl.org/</i></dt>
-<dd>
-
-<p><b>OpenSSL</b> project website</p>
-
-</dd>
-</dl>
-
-<a href="#_podtop_"><h1 id="AUTHOR">AUTHOR</h1></a>
-
-<dl>
-
-<dt id="Micha-Trojnara">Michał Trojnara</dt>
-<dd>
-
-<p>&lt;<i>Michal.Trojnara@stunnel.org</i>&gt;</p>
-
-</dd>
-</dl>
-
-<table border="0" width="100%" cellspacing="0" cellpadding="3">
-<tr><td class="_podblock_" style="background-color: #cccccc; color: #000" valign="middle">
-<big><strong><span class="_podblock_">&nbsp;stunnel TLS Proxy</span></strong></big>
-</td></tr>
-</table>
-
+<h1 id="files">FILES</h1>
+<ul>
+<li><p><em>@sysconfdir@/stunnel/stunnel.conf</em></p>
+<p><strong>stunnel</strong> configuration file</p></li>
+</ul>
+<h1 id="bugs">BUGS</h1>
+<p>The <em>execArgs</em> option and the Win32 command line do not
+support quoting.</p>
+<h1 id="see-also">SEE ALSO</h1>
+<ul>
+<li><p><a href="https://www.stunnel.org/"
+class="uri">https://www.stunnel.org/</a></p>
+<p><strong>stunnel</strong> Application</p></li>
+<li><p><a href="https://openssl-library.org/"
+class="uri">https://openssl-library.org/</a></p>
+<p><strong>OpenSSL</strong> Library</p></li>
+</ul>
+<h1 id="author">AUTHOR</h1>
+<ul>
+<li><p>Michał Trojnara</p>
+<p><a href="mailto:Michal.Trojnara@stunnel.org"
+class="email">Michal.Trojnara@stunnel.org</a></p></li>
+</ul>
 </body>
-
 </html>
-
-

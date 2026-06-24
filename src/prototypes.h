@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -126,6 +126,9 @@ typedef enum {
     LOCK_WIN_LOG,                           /* ui_win_gui.c */
 #endif
     LOCK_SECTIONS,                          /* traversing section list */
+#if !defined(HAVE_LOCALTIME_R) || !defined(_REENTRANT)
+    LOCK_LOCALTIME,                         /* unsafe localtime() */
+#endif
     STUNNEL_LOCKS                           /* number of locks */
 } LOCK_TYPE;
 
@@ -165,7 +168,7 @@ typedef enum {
 typedef union sockaddr_union {
     struct sockaddr sa;
     struct sockaddr_in in;
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     struct sockaddr_in6 in6;
 #endif
 #ifdef HAVE_STRUCT_SOCKADDR_UN
@@ -193,7 +196,10 @@ typedef enum {
     COMP_NONE,                           /* empty compression algorithms set */
     COMP_DEFLATE,            /* default OpenSSL's compression algorithms set */
     COMP_ZLIB,          /* additional historic ZLIB compression algorithm id */
-    STUNNEL_COMPS                   /* number of compression algorithms sets */
+#if OPENSSL_VERSION_NUMBER>=0x30200000L
+    COMP_ZSTD,                 /* non-standard ZSTD compression algorithm id */
+    COMP_BROTLI,             /* non-standard BROTLI compression algorithm id */
+#endif
 } COMP_TYPE;
 #endif /* !defined(OPENSSL_NO_COMP) */
 
@@ -495,16 +501,18 @@ typedef enum {
         /* s_poll_set definition for network.c */
 
 typedef struct {
+#if defined(USE_POLL) || defined(USE_WIN32)
+    unsigned capacity;
+#endif
 #ifdef USE_POLL
     struct pollfd *ufds;
     unsigned nfds;
-    unsigned allocated;
 #else /* select */
-    fd_set *irfds, *iwfds, *ixfds, *orfds, *owfds, *oxfds;
-    SOCKET max;
-#ifdef USE_WIN32
-    unsigned allocated;
+    fd_set *irfds, *orfds, *iwfds, *owfds;
+#ifndef USE_WIN32
+    fd_set *ixfds, *oxfds;
 #endif
+    SOCKET max;
 #endif
     int main_thread;
 } s_poll_set;
@@ -653,6 +661,7 @@ void sockerror(const char *);
 void log_error(int, int, const char *);
 char *s_strerror(int);
 void bin2hexstring(const unsigned char *, size_t, char *, size_t);
+void safe_localtime(struct tm *, time_t);
 
 /**************************************** prototypes for pty.c */
 
@@ -681,27 +690,35 @@ int fips_default(void);
 int fips_available(void);
 #endif
 void crypto_init(void);
+void crypto_cleanup(void);
 int ssl_init(void);
+void ssl_cleanup(void);
 int ssl_configure(GLOBAL_OPTIONS *);
 
 /**************************************** prototypes for ctx.c */
-
-extern SERVICE_OPTIONS *current_section;
 
 #ifndef OPENSSL_NO_DH
 extern DH *dh_params;
 extern int dh_temp_params;
 #endif /* OPENSSL_NO_DH */
 
+#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
+extern UI_METHOD *ui_stunnel;
+#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L*/
+
+extern SERVICE_OPTIONS *current_section;
+
+int ctx_init(void);
+void ctx_cleanup(void);
 int context_init(SERVICE_OPTIONS *);
 void context_cleanup(SERVICE_OPTIONS *);
+#if !defined(OPENSSL_NO_DH) && OPENSSL_VERSION_NUMBER<0x10100000L
+int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g);
+#endif /* !defined(OPENSSL_NO_DH) && OPENSSL_VERSION_NUMBER<0x10100000L */
 #ifndef OPENSSL_NO_PSK
 void psk_sort(PSK_TABLE *, PSK_KEYS *);
 PSK_KEYS *psk_find(const PSK_TABLE *, const char *);
 #endif /* !defined(OPENSSL_NO_PSK) */
-#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
-UI_METHOD *ui_stunnel(void);
-#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L*/
 void print_session_id(const char *, SSL_SESSION *);
 void ssl_error(CLI *, const char *);
 
@@ -712,7 +729,11 @@ int verify_init(SERVICE_OPTIONS *);
 X509 *engine_get_cert(ENGINE *, const char *);
 #endif
 void print_CA_list(const char *, const STACK_OF(X509_NAME) *);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+char *X509_NAME2text(const X509_NAME *);
+#else /* OpenSSL 1.1.0 or newer */
 char *X509_NAME2text(X509_NAME *);
+#endif /* OpenSSL 1.1.0 or newer */
 
 /**************************************** prototypes for ocsp.c */
 

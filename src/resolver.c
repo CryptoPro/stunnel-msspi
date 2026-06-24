@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -159,11 +159,11 @@ int use_ipv6(void) {
 #if defined(USE_WIN32) && !defined(_WIN32_WCE)
     return s_getaddrinfo != NULL;
 #else /* defined(USE_WIN32) && !defined(_WIN32_WCE) */
-#if defined(USE_IPv6)
+#if defined(USE_IPV6)
     return 1;
-#else /* defined(USE_IPv6) */
+#else /* defined(USE_IPV6) */
     return 0;
-#endif /* defined(USE_IPv6) */
+#endif /* defined(USE_IPV6) */
 #endif /* defined(USE_WIN32) && !defined(_WIN32_WCE) */
 }
 
@@ -207,7 +207,7 @@ NOEXPORT void addrlist2addr(SOCKADDR_UNION *addr, SOCKADDR_LIST *addr_list) {
             return;
         }
     }
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     for(i=0; i<addr_list->num; ++i) { /* find the first IPv6 address */
         if(addr_list->addr[i].in.sin_family==AF_INET6) {
             memcpy(addr, &addr_list->addr[i], sizeof(SOCKADDR_UNION));
@@ -264,7 +264,7 @@ unsigned hostport2addrlist(SOCKADDR_LIST *addr_list,
     unsigned num;
 
     memset(&hints, 0, sizeof hints);
-#if defined(USE_IPv6) || defined(USE_WIN32)
+#if defined(USE_IPV6) || defined(USE_WIN32)
     hints.ai_family=AF_UNSPEC;
 #else
     hints.ai_family=AF_INET;
@@ -398,7 +398,7 @@ socklen_t addr_len(const SOCKADDR_UNION *addr) {
         return 0;
     case AF_INET: /* 2 (almost universally) */
         return sizeof(struct sockaddr_in);
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     case AF_INET6:
         return sizeof(struct sockaddr_in6);
 #endif
@@ -452,7 +452,7 @@ NOEXPORT int getaddrinfo(const char *node, const char *service,
         memcpy(ai, hints, sizeof(struct addrinfo));
 
     /* try to decode numerical address */
-#if defined(USE_IPv6) && !defined(USE_WIN32)
+#if defined(USE_IPV6) && !defined(USE_WIN32)
     ai->ai_family=AF_INET6;
     ai->ai_addrlen=sizeof(struct sockaddr_in6);
     ai->ai_addr=str_alloc((size_t)ai->ai_addrlen);
@@ -523,7 +523,7 @@ NOEXPORT int alloc_addresses(struct hostent *h, const struct addrinfo *hints,
             *tail=ai;
         }
         ai->ai_family=h->h_addrtype;
-#if defined(USE_IPv6)
+#if defined(USE_IPV6)
         if(h->h_addrtype==AF_INET6) {
             ai->ai_addrlen=sizeof(struct sockaddr_in6);
             ai->ai_addr=str_alloc((size_t)ai->ai_addrlen);
@@ -625,19 +625,19 @@ int getnameinfo(const struct sockaddr *sa, socklen_t salen,
         return s_getnameinfo(sa, salen, host, hostlen, serv, servlen, flags);
 #endif
     if(host && hostlen) {
-#if defined(USE_IPv6) && !defined(USE_WIN32)
+#if defined(USE_IPV6) && !defined(USE_WIN32)
         inet_ntop(sa->sa_family, sa->sa_family==AF_INET6 ?
                 (void *)&((struct sockaddr_in6 *)sa)->sin6_addr :
                 (void *)&((struct sockaddr_in *)sa)->sin_addr,
             host, hostlen);
-#else /* USE_IPv6 */
+#else /* USE_IPV6 */
         /* inet_ntoa is not mt-safe */
         CRYPTO_THREAD_write_lock(stunnel_locks[LOCK_INET]);
         strncpy(host, inet_ntoa(((struct sockaddr_in *)sa)->sin_addr),
             hostlen);
         CRYPTO_THREAD_unlock(stunnel_locks[LOCK_INET]);
         host[hostlen-1]='\0';
-#endif /* USE_IPv6 */
+#endif /* USE_IPV6 */
     }
     if(serv && servlen)
         sprintf(serv, "%u", ntohs(((struct sockaddr_in *)sa)->sin_port));

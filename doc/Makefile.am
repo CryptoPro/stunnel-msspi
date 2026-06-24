@@ -1,8 +1,8 @@
 ## Process this file with automake to produce Makefile.in
-# by Michal Trojnara 1998-2025
+# by Michal Trojnara 1998-2026
 
-EXTRA_DIST = stunnel.pod.in stunnel.8.in stunnel.html.in en
-EXTRA_DIST += stunnel.pl.pod.in stunnel.pl.8.in stunnel.pl.html.in pl
+EXTRA_DIST = stunnel.md stunnel.8.in stunnel.html.in en
+EXTRA_DIST += stunnel.pl.md stunnel.pl.8.in stunnel.pl.html.in pl
 
 man_MANS = stunnel.8 stunnel.pl.8
 
@@ -12,28 +12,38 @@ doc_DATA = stunnel.html stunnel.pl.html
 CLEANFILES = $(man_MANS)
 DISTCLEANFILES = $(doc_DATA)
 
-SUFFIXES = .pod.in .8.in .html.in
-
 BUILD_DATE = $(shell date --utc --date=@$(or $(SOURCE_DATE_EPOCH),$(shell date +%s)) +%Y.%m.%d)
 
-.pod.in.8.in:
-	pod2man -u -n stunnel -s 8 -r $(VERSION) \
-		-c "stunnel TLS Proxy" -d '$(BUILD_DATE)' $< $@
+SUFFIXES = .md .8.in .html.in
 
-.pod.in.html.in:
-	pod2html --index --backlink --header \
-		--title "stunnel TLS Proxy" --infile=$< | \
-		sed -e 's|&#x142;|ł|g' >$@
-	rm -f pod2htmd.tmp pod2htmi.tmp
+.md.8.in:
+	pandoc -s -t man \
+		-M title='STUNNEL' \
+		-V section='8' \
+		-V header='stunnel TLS Proxy' \
+		-V footer='stunnel $(VERSION)' \
+		-V date='$(BUILD_DATE)' \
+		-o $@ $<
 
-edit = sed \
-	-e 's|@bindir[@]|$(bindir)|g' \
-	-e 's|@sysconfdir[@]|$(sysconfdir)|g' \
-	-e 's|\\f(CI@sysconfdir\\fI@|$(sysconfdir)|g' \
-	-e '\|^<link rev="made" href="|d'
+.md.html.in:
+	pandoc -s -t html --toc \
+		-M title='stunnel TLS Proxy' \
+		-V maxwidth=72em \
+		-o $@ $<
 
-$(man_MANS) $(doc_DATA): Makefile
-	$(edit) '$(srcdir)/$@.in' >$@
+edit_man = sed \
+	-e 's|\\\[at\]bindir\\\[at\]|$(bindir)|g' \
+	-e 's|\\\[at\]sysconfdir\\\[at\]|$(sysconfdir)|g'
+
+edit_html = sed \
+	-e 's|@bindir[@]|<i>\&lt;bin-folder\&gt;<\/i>|g' \
+	-e 's|@sysconfdir[@]/stunnel|<i>\&lt;config-folder\&gt;<\/i>|g'
+
+$(man_MANS): Makefile
+	$(edit_man) '$(srcdir)/$@.in' >$@
+
+$(doc_DATA): Makefile
+	$(edit_html) '$(srcdir)/$@.in' >$@
 
 stunnel.8: $(srcdir)/stunnel.8.in
 stunnel.html: $(srcdir)/stunnel.html.in

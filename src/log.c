@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -153,20 +153,12 @@ void s_log(int level, const char *format, ...) {
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif /* __GNUC__ */
 void s_vlog(int level, const char *format, va_list ap) {
-    va_list aq;
-    char stamp[72], id[72], *text;
-    int len;
 #ifdef USE_WIN32
     DWORD libc_error;
 #else
     int libc_error;
 #endif
     int socket_error;
-    time_t gmt;
-    struct tm *timeptr;
-#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
-    struct tm timestruct;
-#endif
     TLS_DATA *tls_data;
 
     libc_error=get_last_error();
@@ -181,26 +173,32 @@ void s_vlog(int level, const char *format, va_list ap) {
 
     /* performance optimization: skip the trivial case early */
     if(log_mode!=LOG_MODE_CONFIGURED || level<=tls_data->opt->log_level) {
+        time_t gmt;
+        struct tm ts;
+        char stamp[72], id[72], *text;
+        va_list aq;
+        int len;
+
         /* format the id to be logged */
         time(&gmt);
-#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
-        timeptr=localtime_r(&gmt, &timestruct);
-#else
-        timeptr=localtime(&gmt);
-#endif
+        safe_localtime(&ts, gmt);
         snprintf(stamp, sizeof stamp, "%04d.%02d.%02d %02d:%02d:%02d",
-            timeptr->tm_year+1900, timeptr->tm_mon+1, timeptr->tm_mday,
-            timeptr->tm_hour, timeptr->tm_min, timeptr->tm_sec);
+            ts.tm_year+1900, ts.tm_mon+1, ts.tm_mday,
+            ts.tm_hour, ts.tm_min, ts.tm_sec);
         snprintf(id, sizeof id, "LOG%d[%s]", level, tls_data->id);
 
         /* format the text to be logged */
+        /* cppcheck-suppress-begin va_list_usedBeforeStarted */
         va_copy(aq, ap);
-        len=vsnprintf(NULL, 0, format, ap);
+        len=vsnprintf(NULL, 0, format, aq);
+        va_end(aq);
         if(len>1024)
             len=1024;
         text=alloca((size_t)len+1);
+        va_copy(aq, ap);
         len=vsnprintf(text, (size_t)len+1, format, aq);
         va_end(aq);
+        /* cppcheck-suppress-end va_list_usedBeforeStarted */
         while(len>0 && text[len-1]=='\n')
             text[--len]='\0'; /* strip trailing newlines */
         safestring(text);
@@ -304,12 +302,14 @@ NOEXPORT void log_raw(SERVICE_OPTIONS *opt,
         }
         break;
     case LOG_MODE_ERROR:
+        if(level>=LOG_INFO && level<=LOG_DEBUG)
+            return;
         /* don't log the id or the time stamp */
         size=strlen(text)+5;
         line=alloca(size);
-        if(level>=0 && level<=7) /* just in case */
-            snprintf(line, size, "[%c] %s", "***!:.  "[level], text);
-        else
+        if(level>=LOG_EMERG && level<=LOG_NOTICE)
+            snprintf(line, size, "[%c] %s", "***!:."[level], text);
+        else /* invalid level */
             snprintf(line, size, "[?] %s", text);
         break;
     default: /* LOG_MODE_INFO */
@@ -591,4 +591,21 @@ void bin2hexstring(const unsigned char *in_data, size_t in_size, char *out_data,
     out_data[2*i]='\0';
 }
 
+void safe_localtime(struct tm *ts, time_t unix_time) {
+#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
+    if(!localtime_r(&unix_time, ts))
+        memset(ts, 0, sizeof *ts);
+#else
+    CRYPTO_THREAD_write_lock(stunnel_locks[LOCK_LOCALTIME]);
+    {
+        struct tm *tp=localtime(&unix_time);
+
+        if(tp)
+            memcpy(ts, tp, sizeof *ts);
+        else
+            memset(ts, 0, sizeof *ts);
+    }
+    CRYPTO_THREAD_unlock(stunnel_locks[LOCK_LOCALTIME]);
+#endif
+}
 /* end of log.c */

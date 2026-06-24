@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -119,7 +119,7 @@ const char *protocol_init(SERVICE_OPTIONS *opt) {
         const char *name;
         MODE client, server;
     } PROTOCOLS;
-    const PROTOCOLS protocols[] = {
+    const PROTOCOLS protocols[]={
         {.name="socks",
             .client={.late=socks_client_late},
             .server={.init=socks_server_init, .middle=socks_server_middle, .late=socks_server_late}},
@@ -309,7 +309,7 @@ NOEXPORT void socks5_client_address(CLI *c) {
             s_log(LOG_INFO, "Sending SOCKS5 IPv4 address");
             s_ssl_write(c, &socks, sizeof socks.v4);
             break;
-#ifdef USE_IPv6
+#ifdef USE_IPV6
         case AF_INET6:
             socks.req.atyp=0x04; /* IP v6 address */
             memcpy(&socks.v6.addr, &addr.in6.sin6_addr, 16);
@@ -422,6 +422,7 @@ NOEXPORT void socks4_server(CLI *c) {
     SOCKADDR_UNION addr;
     int close_connection=1;
 
+    memset(&socks, 0, sizeof socks);
     s_ssl_read(c, &socks.cd, sizeof socks-sizeof socks.vn);
     socks.vn=0; /* response version 0 */
     user_name=ssl_getstring(c); /* ignore the username */
@@ -562,7 +563,7 @@ NOEXPORT void socks5_server(CLI *c) {
                 socks.resp.rep=0x04; /* Host unreachable */
             }
             str_free(host_name);
-#ifdef USE_IPv6
+#ifdef USE_IPV6
         } else if(socks.req.atyp==0x04) { /* IP v6 address */
             c->connect_addr.num=1;
             c->connect_addr.addr=str_alloc(sizeof(SOCKADDR_UNION));
@@ -596,7 +597,7 @@ NOEXPORT void socks5_server(CLI *c) {
                 memcpy(&socks.v4.addr, &addr.in.sin_addr, 4);
                 socks.resp.atyp=0x01; /* IP v4 address */
                 socks.resp.rep=0x00; /* succeeded */
-#ifdef USE_IPv6
+#ifdef USE_IPV6
             } else if(addr.sa.sa_family==AF_INET6) {
                 s_log(LOG_INFO, "SOCKS5/TOR resolved \"%s\" to IPv6", host_name);
                 memcpy(&socks.v6.addr, &addr.in6.sin6_addr, 16);
@@ -634,14 +635,14 @@ NOEXPORT void socks5_server(CLI *c) {
 
 /* validate the allocated address */
 NOEXPORT int validate_connect_addr(CLI *c) {
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     const unsigned char ipv6_loopback[16]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
 #endif
     unsigned i;
 
     for(i=0; i<c->connect_addr.num; ++i) {
         SOCKADDR_UNION *addr=&c->connect_addr.addr[i];
-#ifdef USE_IPv6
+#ifdef USE_IPV6
         if(addr->sa.sa_family==AF_INET6) {
             if(!memcmp(&addr->in6.sin6_addr, ipv6_loopback, 16)) {
                 s_log(LOG_ERR,
@@ -717,7 +718,7 @@ NOEXPORT void proxy_server_late(CLI *c) {
     case AF_INET:
         proto="TCP4";
         break;
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     case AF_INET6:
         proto="TCP6";
         break;
@@ -733,7 +734,7 @@ NOEXPORT void proxy_server_late(CLI *c) {
 
 NOEXPORT void cifs_client_middle(CLI *c) {
     uint8_t buffer[5];
-    uint8_t request_dummy[4] = {0x81, 0, 0, 0}; /* a zero-length request */
+    uint8_t request_dummy[4]={0x81, 0, 0, 0}; /* a zero-length request */
 
     s_write(c, c->remote_fd.fd, request_dummy, 4);
     s_read(c, c->remote_fd.fd, buffer, 5);
@@ -753,8 +754,8 @@ NOEXPORT void cifs_client_middle(CLI *c) {
 
 NOEXPORT void cifs_server_early(CLI *c) {
     uint8_t buffer[128];
-    uint8_t response_access_denied[5] = {0x83, 0, 0, 1, 0x81};
-    uint8_t response_use_ssl[5] = {0x83, 0, 0, 1, 0x8e};
+    uint8_t response_access_denied[5]={0x83, 0, 0, 1, 0x81};
+    uint8_t response_use_ssl[5]={0x83, 0, 0, 1, 0x8e};
     uint16_t len;
 
     s_read(c, c->local_rfd.fd, buffer, 4); /* NetBIOS header */
@@ -830,8 +831,8 @@ NOEXPORT void smtp_client_late(CLI *c) {
             c->opt->protocol_host ? c->opt->protocol_host : "localhost");
         line=ssl_getline(c); /* ignore the reply */
         while(is_prefix(line, "250-")) {
-	        str_free(line);
-	        line=ssl_getline(c);
+            str_free(line);
+            line=ssl_getline(c);
         }
         str_free(line);
         if(!strcasecmp(c->opt->protocol_authentication, "LOGIN"))
@@ -1215,7 +1216,7 @@ NOEXPORT void nntp_client_middle(CLI *c) {
 
 /**************************************** LDAP, RFC 2830 */
 
-uint8_t ldap_starttls_message[0x1d + 2] = {
+uint8_t ldap_starttls_message[0x1d + 2]={
     0x30,   /* tag = UNIVERSAL SEQUENCE */
     0x1d,   /* len = 29 */
     0x02,   /*   tag = INTEGER (messageID) */

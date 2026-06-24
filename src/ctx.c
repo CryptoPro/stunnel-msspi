@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -55,6 +55,10 @@ typedef struct {
     const char *password;
     const char *prompt_info;
 } PW_CB_DATA;
+
+#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
+UI_METHOD *ui_stunnel=NULL;
+#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
 
 #ifndef OPENSSL_NO_DH
 DH *dh_params=NULL;
@@ -157,6 +161,114 @@ NOEXPORT char *compare_cipher_lists(STACK_OF(SSL_CIPHER) *, STACK_OF(SSL_CIPHER)
 NOEXPORT char *get_tls13_cipher_list(STACK_OF(SSL_CIPHER) *);
 #endif /* TLS 1.3 */
 
+/**************************************** global initialization and cleanup */
+
+#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
+
+NOEXPORT void clear_cached_password(PW_CB_DATA *cb_data) {
+    char *previous=(char *)cb_data->password;
+
+    cb_data->password=NULL;
+    if(previous) {
+        OPENSSL_cleanse(previous, strlen(previous));
+        str_free(previous);
+    }
+}
+
+#if OPENSSL_VERSION_NUMBER>=0x10000000L
+NOEXPORT char *ui_prompt_constructor(UI *ui,
+        const char *phrase_desc, const char *object_name) {
+    PW_CB_DATA *cb_data=UI_get0_user_data(ui);
+
+    if(!phrase_desc) {
+        if(cb_data->prompt_info && is_prefix(cb_data->prompt_info, "pkcs11:"))
+            phrase_desc="PIN";
+        else
+            phrase_desc="passphrase";
+    }
+    if(!object_name && cb_data)
+        object_name=cb_data->prompt_info;
+    return UI_construct_prompt(NULL, phrase_desc, object_name);
+}
+#endif /* OPENSSL_VERSION_NUMBER>=0x10000000L */
+
+NOEXPORT int ui_caching_reader(UI *ui, UI_STRING *uis) {
+    PW_CB_DATA *cb_data=UI_get0_user_data(ui);
+    int (*reader)(UI *, UI_STRING *);
+
+    /* NOTE: NULL cb_data value indicates a password that is not supposed
+     * to be cached, such as a CKA_ALWAYS_AUTHENTICATE PIN in PKCS#11 */
+
+    /* return the cached password if available */
+    if(cb_data && cb_data->password) {
+        /* Set user_data password */
+        if(UI_set_result(ui, uis, cb_data->password) < 0)
+            s_log(LOG_DEBUG, "Failed to set the cached password");
+        else
+            return 1; /* OK */
+    }
+
+    reader=ui_get_reader();
+    if(reader) { /* invoke the UI if available */
+        const char *result;
+
+        if(!reader(ui, uis))
+            return 0; /* FAILED */
+        result=UI_get0_result_string(uis);
+
+        /* cache a non-empty result if storage is available */
+        if(result && *result && cb_data) {
+            clear_cached_password(cb_data);
+            cb_data->password=str_dup(result);
+            s_log(LOG_DEBUG, "Password cached");
+        }
+    } else { /* default to the empty password if we've got nothing better */
+        s_log(LOG_DEBUG, "No reader available, using empty password");
+        if(UI_set_result(ui, uis, "") < 0) {
+            s_log(LOG_DEBUG, "Failed to set empty password");
+            return 0; /* FAILED */
+        }
+    }
+
+    return 1; /* OK */
+}
+
+#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
+
+int ctx_init(void) {
+#ifndef OPENSSL_NO_DH
+    dh_params=get_dh2048();
+    if(!dh_params) {
+        s_log(LOG_ERR, "Failed to get default DH parameters");
+        return 1; /* FAILED */
+    }
+#endif /* OPENSSL_NO_DH */
+#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
+    ui_stunnel=UI_create_method("stunnel UI");
+    if(!ui_stunnel) {
+        ssl_error(NULL, "UI_create_method");
+        return 1; /* FAILED */
+    }
+#if OPENSSL_VERSION_NUMBER>=0x10000000L
+    UI_method_set_prompt_constructor(ui_stunnel, ui_prompt_constructor);
+#endif /* OPENSSL_VERSION_NUMBER>=0x10000000L */
+    UI_method_set_opener(ui_stunnel, ui_get_opener());
+    UI_method_set_writer(ui_stunnel, ui_get_writer());
+    UI_method_set_reader(ui_stunnel, ui_caching_reader);
+    UI_method_set_closer(ui_stunnel, ui_get_closer());
+#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
+    return 0; /* SUCCESS */
+}
+
+void ctx_cleanup(void) {
+#ifndef OPENSSL_NO_DH
+    DH_free(dh_params);
+#endif
+#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
+    UI_destroy_method(ui_stunnel);
+#endif
+}
+
 /**************************************** initialize section->ctx */
 
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
@@ -255,10 +367,12 @@ int context_init(SERVICE_OPTIONS *section) { /* init TLS context */
         sk_SSL_CIPHER_free(tmp_cipher_list);
         if(tls12_cipher_list) {
             s_log(LOG_DEBUG, "TLSv1.2 and below ciphers: %s", tls12_cipher_list);
+            str_free(tls12_cipher_list);
         }
         tls13_cipher_list=get_tls13_cipher_list(cipher_list);
         if(tls13_cipher_list) {
             s_log(LOG_DEBUG, "TLSv1.3 ciphersuites: %s", tls13_cipher_list);
+            str_free(tls13_cipher_list);
         }
     }
 #endif /* TLS 1.3 */
@@ -483,10 +597,28 @@ NOEXPORT int matches_wildcard(const char *servername, const char *pattern) {
 #ifndef OPENSSL_NO_DH
 
 #if OPENSSL_VERSION_NUMBER<0x10100000L
+
+/* this is needed for dhparam.c generated with OpenSSL >= 1.1.0
+ * to be linked against the older versions */
+int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g) {
+    if(!p || !g) /* q is optional */
+        return 0;
+    BN_free(dh->p);
+    BN_free(dh->q);
+    BN_free(dh->g);
+    dh->p=p;
+    dh->q=q;
+    dh->g=g;
+    if(q)
+        dh->length=BN_num_bits(q);
+    return 1;
+}
+
 NOEXPORT STACK_OF(SSL_CIPHER) *SSL_CTX_get_ciphers(const SSL_CTX *ctx) {
     return ctx->cipher_list;
 }
-#endif
+
+#endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
 NOEXPORT int dh_init(SERVICE_OPTIONS *section) {
     DH *dh=NULL;
@@ -551,23 +683,23 @@ NOEXPORT int dh_init(SERVICE_OPTIONS *section) {
 #if OPENSSL_VERSION_NUMBER>=0x10101000L
 NOEXPORT DH *dh_load_from_store(const char *uri)
 {
-    DH *dh = NULL;
-    OSSL_STORE_CTX *store_ctx = NULL;
+    DH *dh=NULL;
+    OSSL_STORE_CTX *store_ctx=NULL;
 
-    store_ctx = OSSL_STORE_open(uri, NULL, NULL, NULL, NULL);
+    store_ctx=OSSL_STORE_open(uri, NULL, NULL, NULL, NULL);
     if(!store_ctx)
         return NULL;
 
     while(!OSSL_STORE_eof(store_ctx)) {
-        OSSL_STORE_INFO *object = OSSL_STORE_load(store_ctx);
+        OSSL_STORE_INFO *object=OSSL_STORE_load(store_ctx);
 
         if(!object)
             continue;
         if(OSSL_STORE_INFO_get_type(object) == OSSL_STORE_INFO_PARAMS) {
-            EVP_PKEY *pkey = OSSL_STORE_INFO_get0_PARAMS(object);
+            EVP_PKEY *pkey=OSSL_STORE_INFO_get0_PARAMS(object);
 
             if(pkey) {
-                dh = EVP_PKEY_get1_DH(pkey);
+                dh=EVP_PKEY_get1_DH(pkey);
                 if(dh) {
                     OSSL_STORE_INFO_free(object);
                     break; /* found */
@@ -973,12 +1105,12 @@ NOEXPORT int load_pkcs12_file(SERVICE_OPTIONS *section, const char *file,
         ssl_error(NULL, "SSL_CTX_use_certificate");
         return 1; /* FAILED */
     }
-    *cert_needed = 0;
+    *cert_needed=0;
     if(!SSL_CTX_use_PrivateKey(section->ctx, pkey)) {
         ssl_error(NULL, "SSL_CTX_use_PrivateKey");
         return 1; /* FAILED */
     }
-    *key_needed = 0;
+    *key_needed=0;
 #if OPENSSL_VERSION_NUMBER>=0x10002000L
     if(!SSL_CTX_set0_chain(section->ctx, ca)) {
         ssl_error(NULL, "SSL_CTX_set0_chain");
@@ -1011,7 +1143,7 @@ NOEXPORT int load_cert_file(SERVICE_OPTIONS *section, const char *file, int *cer
             ssl_error(NULL, "SSL_CTX_use_certificate_chain_file");
             return 1; /* FAILED */
         }
-        *cert_needed = 0;
+        *cert_needed=0;
         s_log(LOG_INFO, "Certificate loaded from file: %s", file);
     } else {
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -1084,7 +1216,7 @@ NOEXPORT int load_key_file(SERVICE_OPTIONS *section, const char *file, int *key_
         ssl_error(NULL, "SSL_CTX_use_PrivateKey_file");
         return 1; /* FAILED */
     }
-    *key_needed = 0;
+    *key_needed=0;
     s_log(LOG_INFO, "Private key loaded from file: %s", file);
     return 0; /* OK */
 }
@@ -1110,103 +1242,11 @@ NOEXPORT int load_cert_engine(SERVICE_OPTIONS *section, const char *file, int *c
     }
     s_log(LOG_INFO, "Certificate loaded from engine ID: %s", file);
     X509_free(cert);
-    *cert_needed = 0;
+    *cert_needed=0;
     return 0; /* OK */
 }
 
 #endif /* !defined(OPENSSL_NO_ENGINE) */
-
-#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
-
-NOEXPORT void clear_cached_password(PW_CB_DATA *cb_data) {
-    char *previous=(char *)cb_data->password;
-
-    cb_data->password=NULL;
-    if(previous) {
-        OPENSSL_cleanse(previous, strlen(previous));
-        str_free(previous);
-    }
-}
-
-#if OPENSSL_VERSION_NUMBER>=0x10000000L
-NOEXPORT char *ui_prompt_constructor(UI *ui,
-        const char *phrase_desc, const char *object_name) {
-    PW_CB_DATA *cb_data=UI_get0_user_data(ui);
-
-    if(!phrase_desc) {
-        if(cb_data->prompt_info && is_prefix(cb_data->prompt_info, "pkcs11:"))
-            phrase_desc="PIN";
-        else
-            phrase_desc="passphrase";
-    }
-    if(!object_name && cb_data)
-        object_name=cb_data->prompt_info;
-    return UI_construct_prompt(NULL, phrase_desc, object_name);
-}
-#endif /* OPENSSL_VERSION_NUMBER>=0x10000000L */
-
-NOEXPORT int ui_caching_reader(UI *ui, UI_STRING *uis) {
-    PW_CB_DATA *cb_data=UI_get0_user_data(ui);
-    int (*reader)(UI *, UI_STRING *);
-
-    /* NOTE: NULL cb_data value indicates a password that is not supposed
-     * to be cached, such as a CKA_ALWAYS_AUTHENTICATE PIN in PKCS#11 */
-
-    /* return the cached password if available */
-    if(cb_data && cb_data->password) {
-        /* Set user_data password */
-        if(UI_set_result(ui, uis, cb_data->password) < 0)
-            s_log(LOG_DEBUG, "Failed to set the cached password");
-        else
-            return 1; /* OK */
-    }
-
-    reader=ui_get_reader();
-    if(reader) { /* invoke the UI if available */
-        const char *result;
-
-        if(!reader(ui, uis))
-            return 0; /* FAILED */
-        result=UI_get0_result_string(uis);
-
-        /* cache a non-empty result if storage is available */
-        if(result && *result && cb_data) {
-            clear_cached_password(cb_data);
-            cb_data->password=str_dup(result);
-            s_log(LOG_DEBUG, "Password cached");
-        }
-    } else { /* default to the empty password if we've got nothing better */
-        s_log(LOG_DEBUG, "No reader available, using empty password");
-        if(UI_set_result(ui, uis, "") < 0) {
-            s_log(LOG_DEBUG, "Failed to set empty password");
-            return 0; /* FAILED */
-        }
-    }
-
-    return 1; /* OK */
-}
-
-UI_METHOD *ui_stunnel(void) {
-    static UI_METHOD *ui_method=NULL;
-
-    if(ui_method) /* already initialized */
-        return ui_method;
-    ui_method=UI_create_method("stunnel UI");
-    if(!ui_method) {
-        ssl_error(NULL, "UI_create_method");
-        return NULL;
-    }
-#if OPENSSL_VERSION_NUMBER>=0x10000000L
-    UI_method_set_prompt_constructor(ui_method, ui_prompt_constructor);
-#endif /* OPENSSL_VERSION_NUMBER>=0x10000000L */
-    UI_method_set_opener(ui_method, ui_get_opener());
-    UI_method_set_writer(ui_method, ui_get_writer());
-    UI_method_set_reader(ui_method, ui_caching_reader);
-    UI_method_set_closer(ui_method, ui_get_closer());
-    return ui_method;
-}
-
-#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
 
 #ifndef OPENSSL_NO_ENGINE
 
@@ -1224,7 +1264,7 @@ NOEXPORT int load_key_engine(SERVICE_OPTIONS *section, const char *file, int *ke
 
     for(i=0; i<3; i++) {
         pkey=ENGINE_load_private_key(section->engine, file,
-            ui_stunnel(), NULL);
+            ui_stunnel, NULL);
         if(!pkey) {
             if(i<2 && ui_retry()) { /* wrong PIN */
                 s_log(LOG_ERR, "Wrong PIN: retrying");
@@ -1239,7 +1279,7 @@ NOEXPORT int load_key_engine(SERVICE_OPTIONS *section, const char *file, int *ke
         return 1; /* FAILED */
     }
     s_log(LOG_INFO, "Private key initialized on engine ID: %s", file);
-    *key_needed = 0;
+    *key_needed=0;
     return 0; /* OK */
 }
 
@@ -1275,7 +1315,7 @@ NOEXPORT int load_objects_from_store(SSL_CTX *ctx, const char *uri,
     for(;;) {
         OSSL_STORE_CTX *store_ctx;
 
-        store_ctx=OSSL_STORE_open(uri, ui_stunnel(), &cb_data, NULL, NULL);
+        store_ctx=OSSL_STORE_open(uri, ui_stunnel, &cb_data, NULL, NULL);
         if(store_ctx) {
             while(!OSSL_STORE_eof(store_ctx)) {
                 OSSL_STORE_INFO *object=OSSL_STORE_load(store_ctx);
@@ -1684,15 +1724,6 @@ NOEXPORT int sess_new_cb(SSL *ssl, SSL_SESSION *sess) {
     return 0; /* the OpenSSL's manual is really bad -> use the source here */
 }
 
-#if OPENSSL_VERSION_NUMBER<0x0090800fL
-NOEXPORT const unsigned char *SSL_SESSION_get_id(const SSL_SESSION *s,
-        unsigned int *len) {
-    if(len)
-        *len=s->session_id_length;
-    return (const unsigned char *)s->session_id;
-}
-#endif
-
 void print_session_id(const char *txt, SSL_SESSION *sess) {
     const unsigned char *session_id;
     unsigned int session_id_length;
@@ -2015,12 +2046,12 @@ NOEXPORT void info_callback(const SSL *ssl, int where, int ret) {
     c=SSL_get_ex_data(ssl, index_ssl_cli);
     if(!c) {
         s_log(LOG_ERR,
-            "INTERNAL ERROR: info_callback() called without CLI, state = %x",
+            "INTERNAL ERROR: info_callback() called without CLI, state=%x",
             state);
         return;
     }
 #if 0
-    s_log(LOG_DEBUG, "state = %x", state);
+    s_log(LOG_DEBUG, "state=%x", state);
 #endif
 
         /* do not reset the TLS socket after a fatal alert */
@@ -2182,7 +2213,7 @@ NOEXPORT char *compare_cipher_lists(STACK_OF(SSL_CIPHER) *list1, STACK_OF(SSL_CI
         if(!found) {
             size_t name_len=strlen(cipher2_name);
 
-            result=realloc(result, result_len + name_len + 2); /* +2 for ':' and '\0' */
+            result=str_realloc(result, result_len + name_len + 2); /* +2 for ':' and '\0' */
             if(result_len == 0) {
                 strcpy(result, cipher2_name);
             } else {
@@ -2207,7 +2238,7 @@ NOEXPORT char *get_tls13_cipher_list(STACK_OF(SSL_CIPHER) *list) {
             const char *cipher_name=SSL_CIPHER_get_name(cipher);
             size_t name_len=strlen(cipher_name);
 
-            result=realloc(result, result_len + name_len + 2); /* +2 for ':' and '\0' */
+            result=str_realloc(result, result_len + name_len + 2); /* +2 for ':' and '\0' */
             if(result_len == 0) {
                 strcpy(result, cipher_name);
             } else {

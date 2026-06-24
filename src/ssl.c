@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -37,6 +37,18 @@
 
 #include "prototypes.h"
 
+/* this mirrors a private OpenSSL struct whose layout has stayed stable across
+ * the supported OpenSSL versions, so breakage seems unlikely in current
+ * releases, but it is still an unsupported internal dependency that could
+ * change, especially in a future major version */
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
+struct ssl_comp_st {
+    int id;
+    const char *name;
+    COMP_METHOD *method;
+};
+#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
+
     /* global OpenSSL initialization: compression, engine, entropy */
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
 NOEXPORT void cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
@@ -58,7 +70,6 @@ NOEXPORT int cb_dup_addr(CRYPTO_EX_DATA *to, CRYPTO_EX_DATA *from,
 NOEXPORT void cb_free_addr(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
     int idx, long argl, void *argp);
 #ifndef OPENSSL_NO_COMP
-NOEXPORT void compression_init(void);
 NOEXPORT int compression_set(GLOBAL_OPTIONS *);
 NOEXPORT void compression_list(void);
 #endif
@@ -68,9 +79,6 @@ NOEXPORT void update_rand_file(const char *);
 
 int index_ssl_cli, index_ssl_ctx_opt;
 int index_session_authenticated, index_session_connect_address;
-#ifndef OPENSSL_NO_COMP
-NOEXPORT STACK_OF(SSL_COMP) *comp_methods[STUNNEL_COMPS];
-#endif
 
 #ifdef USE_FIPS
 
@@ -190,6 +198,13 @@ void crypto_init(void) {
 #endif /* USE_WIN32 */
 }
 
+/* release libcrypto resources at shutdown */
+void crypto_cleanup(void) {
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
+    OPENSSL_cleanup();
+#endif
+}
+
 /* initialize libssl before parsing the configuration file */
 int ssl_init(void) {
     index_ssl_cli=SSL_get_ex_new_index(0, NULL,
@@ -206,38 +221,13 @@ int ssl_init(void) {
         s_log(LOG_ERR, "Application specific data initialization failed");
         return 1;
     }
-#ifndef OPENSSL_NO_DH
-    dh_params=get_dh2048();
-    if(!dh_params) {
-        s_log(LOG_ERR, "Failed to get default DH parameters");
-        return 1;
-    }
-#endif /* OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_COMP
-    compression_init();
-#endif /* OPENSSL_NO_COMP */
     return 0;
 }
 
-#ifndef OPENSSL_NO_DH
-#if OPENSSL_VERSION_NUMBER<0x10100000L
-/* this is needed for dhparam.c generated with OpenSSL >= 1.1.0
- * to be linked against the older versions */
-int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g) {
-    if(!p || !g) /* q is optional */
-        return 0;
-    BN_free(dh->p);
-    BN_free(dh->q);
-    BN_free(dh->g);
-    dh->p=p;
-    dh->q=q;
-    dh->g=g;
-    if(q)
-        dh->length=BN_num_bits(q);
-    return 1;
+/* release libssl resources at shutdown */
+void ssl_cleanup(void) {
+    /* no libssl cleanup is needed for now */
 }
-#endif
-#endif
 
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
 NOEXPORT void cb_new_auth(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
@@ -379,55 +369,72 @@ NOEXPORT int SSL_COMP_get_id(const SSL_COMP *comp) {
     return comp->id;
 }
 
-#endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
-
-#if OPENSSL_VERSION_NUMBER<0x10002000L
-
-NOEXPORT void SSL_COMP_set0_compression_methods(STACK_OF(SSL_COMP) *new_meths) {
-    STACK_OF(SSL_COMP) *old_meths;
-    int num, i;
-
-    old_meths=SSL_COMP_get_compression_methods();
-    sk_SSL_COMP_zero(old_meths);
-
-    num=sk_SSL_COMP_num(new_meths);
-    for(i=0; i<num; ++i)
-        sk_SSL_COMP_push(old_meths, sk_SSL_COMP_value(new_meths, i));
+NOEXPORT const char *COMP_get_name(const COMP_METHOD *meth) {
+    return SSL_COMP_get_name(meth);
 }
 
-#endif /* OPENSSL_VERSION_NUMBER>=0x10002000L */
+#endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
-NOEXPORT void compression_init(void) {
-    STACK_OF(SSL_COMP) *methods;
-    COMP_METHOD *zlib;
+/* the following function mostly re-implements the defunct
+ * OpenSSL's SSL_COMP_add_compression_method() function */
+NOEXPORT int add_compression_method(STACK_OF(SSL_COMP) *sk,
+        int id, COMP_METHOD *meth) {
+    SSL_COMP *comp;
 
-    memset(comp_methods, 0, sizeof comp_methods);
+    /* validate the requested compression method */
+    if(!meth || COMP_get_type(meth)==NID_undef) {
+        s_log(LOG_ERR, "Compression type disabled in this OpenSSL build");
+        return 1; /* FAILED */
+    }
 
-    /* setup COMP_NONE */
-    comp_methods[COMP_NONE]=sk_SSL_COMP_new_null();
-
-    /* setup COMP_DEFLATE (RFC 1951) */
-    methods=SSL_COMP_get_compression_methods();
-    if(!methods || !sk_SSL_COMP_num(methods))
-        return;
-    comp_methods[COMP_DEFLATE]=sk_SSL_COMP_dup(methods);
-
-    /* setup COMP_ZLIB (DEFLATE + obsolete private id 0xe0) */
-    zlib=COMP_zlib();
-    if(!zlib || COMP_get_type(zlib)==NID_undef)
-        return;
-    if(SSL_COMP_add_compression_method(0xe0, zlib))
-        return;
-    comp_methods[COMP_ZLIB]=methods; /* reuse the memory */
+    /* build an SSL_COMP object and push it to the stack */
+    comp=OPENSSL_malloc(sizeof(SSL_COMP));
+    if(!comp)
+        return 1; /* FAILED */
+    comp->id=id;
+    comp->name=COMP_get_name(meth); /* SSL_COMP_add_compression_method() bug */
+    comp->method=meth;              /* SSL_COMP_add_compression_method() bug */
+    if(!sk_SSL_COMP_push(sk, comp)) {
+        OPENSSL_free(comp);
+        s_log(LOG_ERR, "Failed to add compression method");
+        return 1; /* FAILED */
+    }
+    return 0; /* SUCCESS */
 }
 
 NOEXPORT int compression_set(GLOBAL_OPTIONS *global) {
-    if(!comp_methods[global->compression]) {
-        s_log(LOG_ERR, "Configured compression is unsupported by OpenSSL");
-        return 1;
+    STACK_OF(SSL_COMP) *methods;
+    int retval=0;
+
+    methods=SSL_COMP_get_compression_methods();
+    if(!methods) /* make sure we have a valid stack */
+        return global->compression!=COMP_NONE;
+
+    /* empty the current compression method stack */
+    while(sk_SSL_COMP_num(methods))
+        sk_SSL_COMP_pop(methods);
+
+    /* add the requested compression methods */
+    switch(global->compression) {
+    case COMP_DEFLATE: /* RFC 1951 on standard id 0x01 */
+        retval|=add_compression_method(methods, 0x01, COMP_zlib());
+        break;
+    case COMP_ZLIB: /* RFC 1951 + historic/obsolete private id 0xe0 */
+        retval|=add_compression_method(methods, 0x01, COMP_zlib());
+        retval|=add_compression_method(methods, 0xe0, COMP_zlib());
+        break;
+#if OPENSSL_VERSION_NUMBER>=0x30200000L
+    case COMP_ZSTD: /* RFC 8878 on stunnel's nonstandard id 0xe1 */
+        retval|=add_compression_method(methods, 0xe1, COMP_zstd());
+        break;
+    case COMP_BROTLI: /* RFC 7932 on stunnel's nonstandard id 0xe2 */
+        retval|=add_compression_method(methods, 0xe2, COMP_brotli());
+        break;
+#endif
+    case COMP_NONE: /* make static code analyzers happy */
+        break;
     }
-    SSL_COMP_set0_compression_methods(comp_methods[global->compression]);
-    return 0; /* success */
+    return retval;
 }
 
 NOEXPORT void compression_list(void) {
@@ -452,7 +459,7 @@ NOEXPORT void compression_list(void) {
         name=SSL_COMP_get0_name(comp);
         /* see OpenSSL commit 847406923534dd791f73d0cda15d3f17f513f2a5 */
         if(!name)
-            name="unknown";
+            name="name not available";
         s_log(LOG_INFO, "Compression id 0x%02x: %s",
             SSL_COMP_get_id(comp), name);
     }

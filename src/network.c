@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -42,9 +42,10 @@
 
 #include "prototypes.h"
 
+#define FDS_INITIAL_CAPACITY 4
 /* #define DEBUG_UCONTEXT */
 
-NOEXPORT void s_poll_realloc(s_poll_set *);
+NOEXPORT void s_poll_realloc(s_poll_set *, unsigned);
 #ifndef USE_UCONTEXT
 NOEXPORT void check_terminate(s_poll_set *);
 #endif
@@ -67,8 +68,7 @@ void s_poll_free(s_poll_set *fds) {
 
 void s_poll_init(s_poll_set *fds, int main_thread) {
     fds->nfds=0;
-    fds->allocated=4; /* prealloc 4 file descriptors */
-    s_poll_realloc(fds);
+    s_poll_realloc(fds, FDS_INITIAL_CAPACITY);
     fds->main_thread=main_thread;
 #ifdef USE_TERMINATE_PIPE
     s_poll_add(fds, main_thread ? signal_pipe[0] : terminate_pipe[0], 1, 0);
@@ -84,10 +84,8 @@ void s_poll_add(s_poll_set *fds, SOCKET fd, int rd, int wr) {
     for(i=0; i<fds->nfds && fds->ufds[i].fd!=fd; i++)
         ;
     if(i==fds->nfds) { /* not found */
-        if(i==fds->allocated) {
-            fds->allocated=i+1;
-            s_poll_realloc(fds);
-        }
+        if(i==fds->capacity)
+            s_poll_realloc(fds, i+1);
         fds->ufds[i].fd=fd;
         fds->ufds[i].events=0;
         fds->nfds++;
@@ -165,8 +163,9 @@ int s_poll_err(s_poll_set *fds, SOCKET fd) {
     return 0; /* not listed in fds */
 }
 
-NOEXPORT void s_poll_realloc(s_poll_set *fds) {
-    fds->ufds=str_realloc(fds->ufds, fds->allocated*sizeof(struct pollfd));
+NOEXPORT void s_poll_realloc(s_poll_set *fds, unsigned capacity) {
+    fds->capacity=capacity;
+    fds->ufds=str_realloc(fds->ufds, capacity*sizeof(struct pollfd));
 }
 
 void s_poll_dump(s_poll_set *fds, int level) {
@@ -340,6 +339,8 @@ int s_poll_wait(s_poll_set *fds, int sec, int msec) {
 int s_poll_wait(s_poll_set *fds, int sec, int msec) {
     int retval;
 
+    if(!fds)
+        fatal("NULL fds is only allowed with UCONTEXT threads");
     do { /* skip "Interrupted system call" errors */
         retval=poll(fds->ufds, fds->nfds, sec<0 ? -1 : 1000*sec+msec);
     } while(retval<0 && get_last_socket_error()==S_EINTR);
@@ -360,23 +361,24 @@ s_poll_set *s_poll_alloc(void) {
 void s_poll_free(s_poll_set *fds) {
     if(fds) {
         str_free(fds->irfds);
-        str_free(fds->iwfds);
-        str_free(fds->ixfds);
         str_free(fds->orfds);
+        str_free(fds->iwfds);
         str_free(fds->owfds);
+#ifndef USE_WIN32
+        str_free(fds->ixfds);
         str_free(fds->oxfds);
+#endif
         str_free(fds);
     }
 }
 
 void s_poll_init(s_poll_set *fds, int main_thread) {
-#ifdef USE_WIN32
-    fds->allocated=4; /* prealloc 4 file descriptors */
-#endif
-    s_poll_realloc(fds);
+    s_poll_realloc(fds, FDS_INITIAL_CAPACITY);
     FD_ZERO(fds->irfds);
     FD_ZERO(fds->iwfds);
+#ifndef USE_WIN32
     FD_ZERO(fds->ixfds);
+#endif
     fds->max=0; /* no file descriptors */
     fds->main_thread=main_thread;
 #ifdef USE_TERMINATE_PIPE
@@ -389,18 +391,21 @@ void s_poll_init(s_poll_set *fds, int main_thread) {
 
 void s_poll_add(s_poll_set *fds, SOCKET fd, int rd, int wr) {
 #ifdef USE_WIN32
-    /* fds->ixfds contains union of fds->irfds and fds->iwfds */
-    if(fds->ixfds->fd_count>=fds->allocated) {
-        fds->allocated=fds->ixfds->fd_count+1;
-        s_poll_realloc(fds);
-    }
+    unsigned max_count=fds->irfds->fd_count > fds->iwfds->fd_count ?
+        fds->irfds->fd_count : fds->iwfds->fd_count;
+
+    if(max_count>=fds->capacity)
+        s_poll_realloc(fds, max_count+1);
 #endif
     if(rd)
         FD_SET(fd, fds->irfds);
     if(wr)
         FD_SET(fd, fds->iwfds);
-    /* always expect errors (and the Spanish Inquisition) */
+#ifndef USE_WIN32
+    /* expect errors (and the Spanish Inquisition) except for WIN32,
+     * which signals tons of non-error events on exceptfds */
     FD_SET(fd, fds->ixfds);
+#endif
     if(fd>fds->max)
         fds->max=fd;
 }
@@ -408,19 +413,25 @@ void s_poll_add(s_poll_set *fds, SOCKET fd, int rd, int wr) {
 void s_poll_remove(s_poll_set *fds, SOCKET fd) {
     FD_CLR(fd, fds->irfds);
     FD_CLR(fd, fds->iwfds);
+#ifndef USE_WIN32
     FD_CLR(fd, fds->ixfds);
+#endif
 }
 
 int s_poll_canread(s_poll_set *fds, SOCKET fd) {
-    /* ignore exception if there is no error (WinCE 6.0 anomaly) */
-    return FD_ISSET(fd, fds->orfds) ||
-        (FD_ISSET(fd, fds->oxfds) && get_socket_error(fd));
+#ifdef USE_WIN32
+    return FD_ISSET(fd, fds->orfds);
+#else
+    return FD_ISSET(fd, fds->orfds) || FD_ISSET(fd, fds->oxfds);
+#endif
 }
 
 int s_poll_canwrite(s_poll_set *fds, SOCKET fd) {
-    /* ignore exception if there is no error (WinCE 6.0 anomaly) */
-    return FD_ISSET(fd, fds->owfds) ||
-        (FD_ISSET(fd, fds->oxfds) && get_socket_error(fd));
+#ifdef USE_WIN32
+    return FD_ISSET(fd, fds->owfds);
+#else
+    return FD_ISSET(fd, fds->owfds) || FD_ISSET(fd, fds->oxfds);
+#endif
 }
 
 int s_poll_hup(s_poll_set *fds, SOCKET fd) {
@@ -436,11 +447,17 @@ int s_poll_rdhup(s_poll_set *fds, SOCKET fd) {
 }
 
 int s_poll_err(s_poll_set *fds, SOCKET fd) {
+#ifdef USE_WIN32
+    (void)fds; /* squash the unused parameter warning */
+    (void)fd; /* squash the unused parameter warning */
+    return 0;
+#else
     return FD_ISSET(fd, fds->oxfds);
+#endif
 }
 
 #ifdef USE_WIN32
-#define FD_SIZE(fds) (8+(fds)->allocated*sizeof(SOCKET))
+#define FD_SIZE(fds) (offsetof(fd_set, fd_array)+(fds)->capacity*sizeof(SOCKET))
 #else
 #define FD_SIZE(fds) (sizeof(fd_set))
 #endif
@@ -449,13 +466,13 @@ int s_poll_wait(s_poll_set *fds, int sec, int msec) {
     int retval;
     struct timeval tv, *tv_ptr;
 
+    if(!fds)
+        fatal("NULL fds is only allowed with UCONTEXT threads");
     do { /* skip "Interrupted system call" errors */
         memcpy(fds->orfds, fds->irfds, FD_SIZE(fds));
         memcpy(fds->owfds, fds->iwfds, FD_SIZE(fds));
-#ifndef _WIN32_WCE
+#ifndef USE_WIN32
         memcpy(fds->oxfds, fds->ixfds, FD_SIZE(fds));
-#else /* WinCE reports unexpected permanent exceptions */
-        FD_ZERO(fds->oxfds);
 #endif
         if(sec<0) { /* infinite timeout */
             tv_ptr=NULL;
@@ -464,38 +481,61 @@ int s_poll_wait(s_poll_set *fds, int sec, int msec) {
             tv.tv_usec=1000*msec;
             tv_ptr=&tv;
         }
+#ifdef USE_WIN32
+        retval=select((int)fds->max+1,
+            fds->orfds, fds->owfds, NULL, tv_ptr);
+#else
         retval=select((int)fds->max+1,
             fds->orfds, fds->owfds, fds->oxfds, tv_ptr);
+#endif
     } while(retval<0 && get_last_socket_error()==S_EINTR);
     if(retval>0)
         check_terminate(fds);
     return retval;
 }
 
-NOEXPORT void s_poll_realloc(s_poll_set *fds) {
+NOEXPORT void s_poll_realloc(s_poll_set *fds, unsigned capacity) {
+#ifdef USE_WIN32
+    fds->capacity=capacity;
+#else
+    (void)capacity; /* squash the unused parameter warning */
+#endif
     fds->irfds=str_realloc(fds->irfds, FD_SIZE(fds));
-    fds->iwfds=str_realloc(fds->iwfds, FD_SIZE(fds));
-    fds->ixfds=str_realloc(fds->ixfds, FD_SIZE(fds));
     fds->orfds=str_realloc(fds->orfds, FD_SIZE(fds));
+    fds->iwfds=str_realloc(fds->iwfds, FD_SIZE(fds));
     fds->owfds=str_realloc(fds->owfds, FD_SIZE(fds));
+#ifndef USE_WIN32
+    fds->ixfds=str_realloc(fds->ixfds, FD_SIZE(fds));
     fds->oxfds=str_realloc(fds->oxfds, FD_SIZE(fds));
+#endif
 }
 
 void s_poll_dump(s_poll_set *fds, int level) {
     SOCKET fd;
-    int ir, iw, ix, or, ow, ox;
+    int ir, or, iw, ow;
+#ifndef USE_WIN32
+    int ix, ox;
+#endif
 
     for(fd=0; fd<fds->max+1; fd++) {
         ir=FD_ISSET(fd, fds->irfds);
         iw=FD_ISSET(fd, fds->iwfds);
+#ifndef USE_WIN32
         ix=FD_ISSET(fd, fds->ixfds);
+#endif
         or=FD_ISSET(fd, fds->orfds);
         ow=FD_ISSET(fd, fds->owfds);
+#ifndef USE_WIN32
         ox=FD_ISSET(fd, fds->oxfds);
         if(ir || iw || ix || or || ow || ox)
             s_log(level, "FD=%ld ifds=%c%c%c ofds=%c%c%c", (long)fd,
                 ir?'r':'-', iw?'w':'-', ix?'x':'-',
                 or?'r':'-', ow?'w':'-', ox?'x':'-');
+#else
+        if(ir || iw || or || ow)
+            s_log(level, "FD=%ld ifds=%c%c ofds=%c%c", (long)fd,
+                ir?'r':'-', iw?'w':'-', or?'r':'-', ow?'w':'-');
+#endif
     }
 }
 
@@ -1076,10 +1116,10 @@ int original_dst(const SOCKET fd, SOCKADDR_UNION *addr) {
     memset(addr, 0, sizeof(SOCKADDR_UNION));
     addrlen=sizeof(SOCKADDR_UNION);
 #ifdef SO_ORIGINAL_DST
-#ifdef USE_IPv6
+#ifdef USE_IPV6
     if(!getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, (char *)&addr->sa, &addrlen))
         return 0; /* succeeded */
-#endif /* USE_IPv6 */
+#endif /* USE_IPV6 */
     if(!getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, (char *)&addr->sa, &addrlen))
         return 0; /* succeeded */
     sockerror("getsockopt SO_ORIGINAL_DST");

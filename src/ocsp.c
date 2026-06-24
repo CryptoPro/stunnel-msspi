@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -937,10 +937,7 @@ NOEXPORT void log_time(const int level, const char *txt, ASN1_GENERALIZEDTIME *t
     int n;
 #if OPENSSL_VERSION_NUMBER>=0x10101000L
     time_t posix_time;
-    struct tm *timeptr;
-#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
-    struct tm timestruct;
-#endif /* defined(HAVE_LOCALTIME_R) && defined(_REENTRANT) */
+    struct tm ts;
 #endif /* OpenSSL version 1.1.1 or later */
 
     if(!t)
@@ -949,19 +946,15 @@ NOEXPORT void log_time(const int level, const char *txt, ASN1_GENERALIZEDTIME *t
     if(!bio)
         return;
 #if OPENSSL_VERSION_NUMBER>=0x10101000L
-    posix_time = time_t_get_asn1_time(t);
+    posix_time=time_t_get_asn1_time(t);
     if(posix_time==INVALID_TIME) {
         BIO_free(bio);
         return;
     }
-#if defined(HAVE_LOCALTIME_R) && defined(_REENTRANT)
-    timeptr=localtime_r(&posix_time, &timestruct);
-#else /* defined(HAVE_LOCALTIME_R) && defined(_REENTRANT) */
-    timeptr=localtime(&posix_time);
-#endif /* defined(HAVE_LOCALTIME_R) && defined(_REENTRANT) */
+    safe_localtime(&ts, posix_time);
     BIO_printf(bio, "%04d.%02d.%02d %02d:%02d:%02d",
-        timeptr->tm_year + 1900, timeptr->tm_mon + 1, timeptr->tm_mday,
-        timeptr->tm_hour, timeptr->tm_min, timeptr->tm_sec);
+        ts.tm_year + 1900, ts.tm_mon + 1, ts.tm_mday,
+        ts.tm_hour, ts.tm_min, ts.tm_sec);
 #else /* OpenSSL version 1.1.1 or later */
     ASN1_TIME_print(bio, t);
 #endif /* OpenSSL version 1.1.1 or later */
@@ -980,6 +973,65 @@ NOEXPORT void log_time(const int level, const char *txt, ASN1_GENERALIZEDTIME *t
     str_free(cp);
 }
 
+#if !defined(HAVE_TIMEGM)
+/* Alternate, portable, O(1), and re-entrant timegm(3) implementation.
+ * See: https://blog.reverberate.org/2020/05/12/optimizing-date-algorithms.html
+ * This code uses a calendar algorithm attributed to Howard Hinnant. The key
+ * idea is to shift the calendar year so that it begins on March 1. By making
+ * February the last month of the year, all leap-day complexities are pushed to
+ * the very end, eliminating the need for messy "if (is_leap_year)" checks.
+ * This avoids loops that count years or months, array lookups for the number
+ * of days in each month, and calls to standard library functions with side
+ * effects (for example, setenv, getenv, and mktime). */
+NOEXPORT time_t timegm_alt(const struct tm *tm) {
+    int64_t year=(int64_t)tm->tm_year+1900;
+    int64_t month=tm->tm_mon;
+    int64_t days;
+    int64_t secs;
+
+    /* 0. Normalize month to 0..11 */
+    year+=month/12;
+    month%=12;
+    if(month < 0) {
+        month+=12;
+        --year;
+    }
+
+    /* 1. Shift calendar to start on March 1st.
+     * This puts the leap day (Feb 29) at the very end of the shifted year. */
+    if(month < 2) {
+        --year;
+        month+=10; /* Jan (0) -> 10, Feb (1) -> 11 */
+    } else {
+        month-=2; /* Mar (2) -> 0, Apr (3) -> 1, ..., Dec (11) -> 9 */
+    }
+
+    /* 2. Calculate days since the computational epoch 0000-03-01.
+     * This leap-year arithmetic is intended for AD dates only. */
+    days=year*365 + year/4 - year/100 + year/400;
+
+    /* 3. Add days passed in the current shifted year.
+     * The magic formula (153 * month + 2) / 5 perfectly distributes
+     * the 30- and 31-day months in the shifted calendar. */
+    days+=(153*month + 2)/5;
+
+    /* 4. Add the zero-based day offset within the month. */
+    days+=tm->tm_mday - 1;
+
+    /* 5. Subtract the number of days between 0000-03-01 and the
+     * Unix Epoch (1970-01-01), which is exactly 719468 days. */
+    days-=719468;
+
+    /* 6. Convert total days to seconds and add hours, minutes, and seconds */
+    secs=days*86400;
+    secs+=(int64_t)tm->tm_hour*3600;
+    secs+=(int64_t)tm->tm_min*60;
+    secs+=tm->tm_sec;
+
+    return (time_t)secs;
+}
+#endif
+
 #if OPENSSL_VERSION_NUMBER>=0x10101000L
 /* Converts ASN1_TIME structure to time_t */
 NOEXPORT time_t time_t_get_asn1_time(const ASN1_TIME *s) {
@@ -990,11 +1042,11 @@ NOEXPORT time_t time_t_get_asn1_time(const ASN1_TIME *s) {
     }
     /* The ASN1_TIME_to_tm() function was added in OpenSSL 1.1.1 */
     if (ASN1_TIME_to_tm(s, &tm)) {
-#ifdef _WIN32
-        return _mkgmtime(&tm);
-#else /* defined _WIN32 */
+#if defined(HAVE_TIMEGM)
         return timegm(&tm);
-#endif /* defined _WIN32 */
+#else /* defined HAVE_TIMEGM */
+        return timegm_alt(&tm);
+#endif /* defined HAVE_TIMEGM */
     } else {
         return INVALID_TIME;
     }

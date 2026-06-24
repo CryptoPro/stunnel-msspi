@@ -1,10 +1,11 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([stunnel],[5.77])
+AC_INIT([stunnel],[5.78])
 AC_MSG_NOTICE([**************************************** initialization])
 AC_CONFIG_AUX_DIR(auto)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([src/config.h])
+AC_USE_SYSTEM_EXTENSIONS
 AC_CONFIG_SRCDIR([src/stunnel.c])
 AM_INIT_AUTOMAKE([foreign])
 
@@ -51,8 +52,8 @@ AC_SUBST([bashcompdir], [${with_bashcompdir}])
 AC_MSG_NOTICE([**************************************** thread model])
 # thread detection should be done first, as it may change the CC variable
 
-AC_ARG_WITH(threads,
-[  --with-threads=model    select threading model (ucontext/pthread/fork)],
+AC_ARG_WITH([threads],
+    [AS_HELP_STRING([--with-threads=model], [select threading model (ucontext/pthread/fork)])],
 [
     case "${withval}" in
         ucontext)
@@ -131,11 +132,9 @@ AC_TYPE_UINT64_T
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
 AC_TYPE_UID_T
-AC_MSG_CHECKING([for socklen_t])
-AC_EGREP_HEADER(socklen_t, sys/socket.h,
-    AC_MSG_RESULT([yes]),
-    AC_MSG_RESULT([no (defined as int)])
-    AC_DEFINE([socklen_t], [int], [Type of socklen_t]))
+AC_CHECK_TYPES([socklen_t], [],
+    [AC_DEFINE([socklen_t], [int], [Type of socklen_t])],
+    [[#include <sys/socket.h>]])
 AC_CHECK_TYPES([struct sockaddr_un], [], [], [#include <sys/un.h>])
 AC_CHECK_TYPES([struct addrinfo], [], [], [#include <netdb.h>])
 
@@ -152,8 +151,8 @@ fi
 AC_MSG_NOTICE([**************************************** entropy sources])
 
 if test "x${cross_compiling}" = "xno"; then
-    AC_ARG_WITH(egd-socket,
-        [  --with-egd-socket=FILE  Entropy Gathering Daemon socket path],
+    AC_ARG_WITH([egd-socket],
+        [AS_HELP_STRING([--with-egd-socket=FILE], [Entropy Gathering Daemon socket path])],
         [EGD_SOCKET="${withval}"]
     )
     if test -n "${EGD_SOCKET}"; then
@@ -162,8 +161,8 @@ if test "x${cross_compiling}" = "xno"; then
     fi
 
     # Check for user-specified random device
-    AC_ARG_WITH(random,
-    [  --with-random=FILE      read randomness from file (default=/dev/urandom)],
+    AC_ARG_WITH([random],
+        [AS_HELP_STRING([--with-random=FILE], [read randomness from file (default=/dev/urandom)])],
         [RANDOM_FILE="${withval}"],
         [
             # Check for random device
@@ -181,7 +180,7 @@ fi
 AC_MSG_NOTICE([**************************************** default group])
 DEFAULT_GROUP=nobody
 if test "x${cross_compiling}" = "xno"; then
-    grep '^nogroup:' /etc/group >/dev/null && DEFAULT_GROUP=nogroup
+    grep '^nogroup:' /etc/group >/dev/null 2>&1 && DEFAULT_GROUP=nogroup
 else
     AC_MSG_WARN([cross-compilation: assuming nogroup is not available])
 fi
@@ -235,19 +234,19 @@ fi
 
 AC_MSG_NOTICE([**************************************** library functions])
 # safe string operations
-AC_CHECK_FUNCS(snprintf vsnprintf)
+AC_CHECK_FUNCS([snprintf vsnprintf])
 # pseudoterminal
-AC_CHECK_FUNCS(openpty _getpty)
+AC_CHECK_FUNCS([openpty _getpty])
 # Unix
-AC_CHECK_FUNCS(daemon waitpid wait4 setsid setgroups chroot realpath)
+AC_CHECK_FUNCS([daemon waitpid wait4 setsid setgroups chroot realpath])
 # limits
-AC_CHECK_FUNCS(sysconf getrlimit)
+AC_CHECK_FUNCS([sysconf getrlimit])
 # threads/reentrant functions
-AC_CHECK_FUNCS(pthread_sigmask localtime_r)
+AC_CHECK_FUNCS([pthread_sigmask localtime_r])
 # threads
-AC_CHECK_FUNCS(getcontext __makecontext_v2)
+AC_CHECK_FUNCS([getcontext __makecontext_v2])
 # sockets
-AC_CHECK_FUNCS(poll gethostbyname2 endhostent getnameinfo)
+AC_CHECK_FUNCS([poll gethostbyname2 endhostent getnameinfo])
 AC_MSG_CHECKING([for getaddrinfo])
 case "${host_os}" in
 *androideabi*)
@@ -284,17 +283,17 @@ darwin[0-8].*)
     ;;
 esac
 # GNU extensions
-AC_CHECK_FUNCS(pipe2 accept4)
+AC_CHECK_FUNCS([timegm pipe2 accept4])
 
 AC_MSG_NOTICE([**************************************** optional features])
 # Use IPv6?
 AC_MSG_CHECKING([whether to enable IPv6 support])
-AC_ARG_ENABLE(ipv6,
-[  --disable-ipv6          disable IPv6 support],
+AC_ARG_ENABLE([ipv6],
+    [AS_HELP_STRING([--disable-ipv6], [disable IPv6 support])],
     [
         case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
-                 AC_DEFINE([USE_IPv6], [1],
+                 AC_DEFINE([USE_IPV6], [1],
                     [Define to 1 to enable IPv6 support])
                  ;;
             no)  AC_MSG_RESULT([no])
@@ -305,9 +304,7 @@ AC_ARG_ENABLE(ipv6,
         esac
     ], [
         AC_MSG_RESULT([yes (default)])
-        AC_DEFINE([USE_IPv6], [1], [Define to 1 to enable IPv6 support])
-    ], [
-        AC_MSG_RESULT([no])
+        AC_DEFINE([USE_IPV6], [1], [Define to 1 to enable IPv6 support])
     ]
 )
 
@@ -354,8 +351,8 @@ AC_ARG_ENABLE(msspi,
 
 # FIPS Mode
 AC_MSG_CHECKING([whether to enable FIPS support])
-AC_ARG_ENABLE(fips,
-[  --disable-fips          disable OpenSSL FIPS support],
+AC_ARG_ENABLE([fips],
+    [AS_HELP_STRING([--disable-fips], [disable OpenSSL FIPS support])],
     [
         case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
@@ -370,8 +367,7 @@ AC_ARG_ENABLE(fips,
                  AC_MSG_ERROR([bad value "${enableval}"])
                  ;;
         esac
-    ],
-    [
+    ], [
         use_fips="auto"
         AC_MSG_RESULT([autodetecting])
     ]
@@ -379,8 +375,8 @@ AC_ARG_ENABLE(fips,
 
 # Disable systemd socket activation support
 AC_MSG_CHECKING([whether to enable systemd socket activation support])
-AC_ARG_ENABLE(systemd,
-[  --disable-systemd       disable systemd socket activation support],
+AC_ARG_ENABLE([systemd],
+    [AS_HELP_STRING([--disable-systemd], [disable systemd socket activation support])],
     [
         case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
@@ -394,8 +390,7 @@ AC_ARG_ENABLE(systemd,
                  AC_MSG_ERROR([Bad value "${enableval}"])
                  ;;
         esac
-    ],
-    [
+    ], [
         AC_MSG_RESULT([autodetecting])
         # the library name has changed to -lsystemd in systemd 209
         AC_SEARCH_LIBS([sd_listen_fds], [systemd systemd-daemon],
@@ -414,8 +409,8 @@ AC_ARG_ENABLE(systemd,
 # Disable use of libwrap (TCP wrappers)
 # it should be the last check!
 AC_MSG_CHECKING([whether to enable TCP wrappers support])
-AC_ARG_ENABLE(libwrap,
-[  --disable-libwrap       disable TCP wrappers support],
+AC_ARG_ENABLE([libwrap],
+    [AS_HELP_STRING([--disable-libwrap], [disable TCP wrappers support])],
     [
         case "${enableval}" in
             yes) AC_MSG_RESULT([yes])
@@ -429,8 +424,7 @@ AC_ARG_ENABLE(libwrap,
                  AC_MSG_ERROR([Bad value "${enableval}"])
                  ;;
         esac
-    ],
-    [
+    ], [
         AC_MSG_RESULT([autodetecting])
         AC_MSG_CHECKING([for hosts_access in -lwrap])
         valid_LIBS="${LIBS}"
@@ -498,8 +492,8 @@ find_ssl_dir() { :
 
 SSLDIR=""
 AC_MSG_CHECKING([for TLS directory])
-AC_ARG_WITH(ssl,
-[  --with-ssl=DIR          location of installed TLS libraries/include files],
+AC_ARG_WITH([ssl],
+    [AS_HELP_STRING([--with-ssl=DIR], [location of installed TLS libraries/include files])],
     [check_ssl_dir "${withval}"],
     [find_ssl_dir]
 )
@@ -517,7 +511,7 @@ AC_DEFINE_UNQUOTED([SSLDIR], ["${SSLDIR}"], [TLS directory])
 valid_CPPFLAGS="${CPPFLAGS}"; CPPFLAGS="${CPPFLAGS} -I${SSLDIR}/include"
 valid_LIBS="${LIBS}"; LIBS="${LIBS} -L${SSLDIR}/lib64 -L${SSLDIR}/lib -lssl -lcrypto"
 
-AC_CHECK_FUNCS(FIPS_mode_set OSSL_PROVIDER_available)
+AC_CHECK_FUNCS([FIPS_mode_set OSSL_PROVIDER_available])
 if test "x${use_fips}" = "xauto"; then
     if test "x${ac_cv_func_FIPS_mode_set}" = "xyes" -o "x${ac_cv_func_OSSL_PROVIDER_available}" = "xyes"; then
         AC_DEFINE([USE_FIPS], [1], [Define to 1 to enable OpenSSL FIPS support])
@@ -529,9 +523,10 @@ fi
 
 AC_MSG_CHECKING([whether DH parameters need to be updated])
 # only build src/dhparam.c if sources are located in the current directory
-if test -f src/stunnel.c && ! grep -q " built for ${PACKAGE_STRING} " src/dhparam.c; then
+if test -f src/stunnel.c && \
+        ! grep -q " built for ${PACKAGE_STRING} " src/dhparam.c 2>/dev/null; then
+    "${srcdir}/makedh.sh" "${PACKAGE_STRING}" >src/dhparam.c
     AC_MSG_RESULT([yes])
-    $(dirname $0)/makedh.sh "${PACKAGE_STRING}" >src/dhparam.c
 else
     AC_MSG_RESULT([no])
 fi

@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -164,17 +164,20 @@ char *str_printf(const char *format, ...) {
 #endif /* __GNUC__>=4.6 */
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif /* __GNUC__ */
-char *str_vprintf(const char *format, va_list start_ap) {
-    int n;
+char *str_vprintf(const char *format, va_list ap) {
     size_t size=96;
     char *p;
-    va_list ap;
 
     p=str_alloc(size);
     for(;;) {
-        va_copy(ap, start_ap);
-        n=vsnprintf(p, size, format, ap);
-        va_end(ap);
+        int n;
+        va_list aq;
+
+        /* cppcheck-suppress-begin va_list_usedBeforeStarted */
+        va_copy(aq, ap);
+        n=vsnprintf(p, size, format, aq);
+        va_end(aq);
+        /* cppcheck-suppress-end va_list_usedBeforeStarted */
         if(n>-1 && n<(int)size)
             return p;
         if(n>-1)                /* glibc 2.1 */
@@ -202,16 +205,20 @@ LPTSTR str_tprintf(LPCTSTR format, ...) {
     return txt;
 }
 
-NOEXPORT LPTSTR str_vtprintf(LPCTSTR format, va_list start_ap) {
-    int n;
+NOEXPORT LPTSTR str_vtprintf(LPCTSTR format, va_list ap) {
     size_t size=32;
     LPTSTR p;
-    va_list ap;
 
     p=str_alloc(size*sizeof(TCHAR));
     for(;;) {
-        va_copy(ap, start_ap);
-        n=_vsntprintf(p, size, format, ap);
+        int n;
+        va_list aq;
+
+        /* cppcheck-suppress-begin va_list_usedBeforeStarted */
+        va_copy(aq, ap);
+        n=_vsntprintf(p, size, format, aq);
+        va_end(aq);
+        /* cppcheck-suppress-end va_list_usedBeforeStarted */
         if(n>-1 && n<(int)size)
             return p;
         size*=2;

@@ -6,7 +6,7 @@ The code contributions are licensed as public domain unless stated otherwise.
 * Several Win32 and WCE improvements and bugfixes
   - Pierre Delaage <delaage.pierre@free.fr>
 
-* Systemd socket activation dded in version 5.05
+* Systemd socket activation added in version 5.05
   - Mark Theunissen
 
   > Copyright (c) 2014 Mark Theunissen

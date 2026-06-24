@@ -148,7 +148,9 @@ class FailureEllipticCurveFIPS(StunnelTest):
             "FIPS.*not available",
             "fips mode not supported",
             r"FIPS PROVIDER.*could not load the shared library",
-            r"FIPS PROVIDER.*missing config data"
+            r"FIPS PROVIDER.*missing config data",
+            # OpenSSL no-ec disables all elliptic curve support, including sect163r1
+            "Specified option name is not valid here"
         ]
         self.events.count = 1
         self.events.success = [

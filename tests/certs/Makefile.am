@@ -1,5 +1,5 @@
 ## Process this file with automake to produce Makefile.in
-# by Michal Trojnara 1998-2025
+# by Michal Trojnara 1998-2026
 
 EXTRA_DIST = maketestcert.sh openssl_root.cnf openssl_intermediate.cnf
 

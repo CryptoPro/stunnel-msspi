@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -54,7 +54,11 @@ NOEXPORT int cert_check(CLI *, X509_STORE_CTX *, int);
 NOEXPORT int cert_check_subject(CLI *, X509_STORE_CTX *);
 #endif /* OPENSSL_VERSION_NUMBER>=0x10002000L */
 NOEXPORT int cert_check_local(X509_STORE_CTX *);
-NOEXPORT int compare_pubkeys(X509 *, X509 *);
+#if OPENSSL_VERSION_NUMBER>=0x40000000L
+NOEXPORT int pubkey_eq(const X509 *, const X509 *);
+#else /* OpenSSL 4.0.0 or later */
+NOEXPORT int pubkey_eq(X509 *, X509 *);
+#endif /* OpenSSL 4.0.0 or later */
 
 /**************************************** verify initialization */
 
@@ -385,7 +389,11 @@ NOEXPORT int cert_check_subject(CLI *c, X509_STORE_CTX *callback_ctx) {
 
 NOEXPORT int cert_check_local(X509_STORE_CTX *callback_ctx) {
     X509 *cert;
+#if OPENSSL_VERSION_NUMBER>=0x30000000L
+    const X509_NAME *subject;
+#else /* OpenSSL 3.0.0 or later */
     X509_NAME *subject;
+#endif /* OpenSSL 3.0.0 or later */
     STACK_OF(X509) *sk;
     int i;
 
@@ -399,7 +407,7 @@ NOEXPORT int cert_check_local(X509_STORE_CTX *callback_ctx) {
     sk=X509_STORE_CTX_get1_certs(callback_ctx, subject);
     if(sk) {
         for(i=0; i<sk_X509_num(sk); i++)
-            if(compare_pubkeys(cert, sk_X509_value(sk, i))) {
+            if(pubkey_eq(cert, sk_X509_value(sk, i))) {
                 sk_X509_pop_free(sk, X509_free);
                 return 1; /* accept */
             }
@@ -431,7 +439,7 @@ NOEXPORT int cert_check_local(X509_STORE_CTX *callback_ctx) {
         X509_STORE_CTX_set_error(callback_ctx, X509_V_ERR_CERT_REJECTED);
         return 0; /* reject */
     }
-    success=compare_pubkeys(cert, obj.data.x509);
+    success=pubkey_eq(cert, obj.data.x509);
     X509_OBJECT_free_contents(&obj);
     if(success)
         return 1; /* accept */
@@ -443,14 +451,24 @@ NOEXPORT int cert_check_local(X509_STORE_CTX *callback_ctx) {
 
 #endif /* OPENSSL_VERSION_NUMBER>=0x10000000L */
 
-NOEXPORT int compare_pubkeys(X509 *c1, X509 *c2) {
-    const ASN1_BIT_STRING *k1=X509_get0_pubkey_bitstr(c1);
-    const ASN1_BIT_STRING *k2=X509_get0_pubkey_bitstr(c2);
-    if(!k1 || !k2 || k1->length!=k2->length || k1->length<0 ||
-            safe_memcmp(k1->data, k2->data, (size_t)k1->length))
-        return 0; /* reject */
-    s_log(LOG_INFO, "CERT: Locally installed certificate matched");
-    return 1; /* accept */
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+#define EVP_PKEY_eq(a, b) EVP_PKEY_cmp((a), (b))
+#endif /* OPENSSL_VERSION_NUMBER<0x30000000L */
+
+#if OPENSSL_VERSION_NUMBER >= 0x40000000L
+NOEXPORT int pubkey_eq(const X509 *c1, const X509 *c2) {
+#else /* OpenSSL 4.0.0 or later */
+NOEXPORT int pubkey_eq(X509 *c1, X509 *c2) {
+#endif /* OpenSSL 4.0.0 or later */
+    EVP_PKEY *k1=X509_get_pubkey(c1);
+    EVP_PKEY *k2=X509_get_pubkey(c2);
+    int retval=k1 && k2 && EVP_PKEY_eq(k1, k2) == 1;
+
+    EVP_PKEY_free(k1);
+    EVP_PKEY_free(k2);
+    if(retval)
+        s_log(LOG_INFO, "CERT: Locally installed certificate public key matched");
+    return retval;
 }
 
 #ifndef OPENSSL_NO_ENGINE
@@ -491,7 +509,11 @@ void print_CA_list(const char *type, const STACK_OF(X509_NAME) *ca_dn) {
     }
 }
 
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+char *X509_NAME2text(const X509_NAME *name) {
+#else /* OpenSSL 1.1.0 or newer */
 char *X509_NAME2text(X509_NAME *name) {
+#endif /* OpenSSL 1.1.0 or newer */
     char *text;
     BIO *bio;
     int n;

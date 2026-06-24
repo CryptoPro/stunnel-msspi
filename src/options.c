@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -55,7 +55,7 @@
 
 #define CONFLINELEN (16*1024)
 
-#define INVALID_SSL_OPTION ((long unsigned)-1)
+#define INVALID_SSL_OPTION ((uint64_t)-1)
 
 typedef enum {
     CMD_SET_DEFAULTS,   /* set default values */
@@ -109,10 +109,10 @@ NOEXPORT void key_free(TICKET_KEY *);
 
 typedef struct {
     const char *name;
-    long unsigned value;
+    uint64_t value;
 } SSL_OPTION;
 
-static const SSL_OPTION ssl_opts[] = {
+static const SSL_OPTION ssl_opts[]={
 #ifdef SSL_OP_ALL
     {"ALL", SSL_OP_ALL},
 #endif
@@ -272,10 +272,40 @@ static const SSL_OPTION ssl_opts[] = {
 #ifdef SSL_OP_TLS_ROLLBACK_BUG
     {"TLS_ROLLBACK_BUG", SSL_OP_TLS_ROLLBACK_BUG},
 #endif
+#ifdef SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE
+    {"ENABLE_KTLS_TX_ZEROCOPY_SENDFILE", SSL_OP_ENABLE_KTLS_TX_ZEROCOPY_SENDFILE},
+#endif
+#ifdef SSL_OP_LEGACY_EC_POINT_FORMATS
+    {"LEGACY_EC_POINT_FORMATS", SSL_OP_LEGACY_EC_POINT_FORMATS},
+#endif
+#ifdef SSL_OP_NO_RX_CERTIFICATE_COMPRESSION
+    {"NO_RX_CERTIFICATE_COMPRESSION", SSL_OP_NO_RX_CERTIFICATE_COMPRESSION},
+#endif
+#ifdef SSL_OP_NO_TX_CERTIFICATE_COMPRESSION
+    {"NO_TX_CERTIFICATE_COMPRESSION", SSL_OP_NO_TX_CERTIFICATE_COMPRESSION},
+#endif
+#ifdef SSL_OP_PREFER_NO_DHE_KEX
+    {"PREFER_NO_DHE_KEX", SSL_OP_PREFER_NO_DHE_KEX},
+#endif
+#ifdef SSL_OP_SERVER_PREFERENCE
+    {"SERVER_PREFERENCE", SSL_OP_SERVER_PREFERENCE},
+#endif
+#ifdef SSL_OP_ECH_GREASE
+    {"ECH_GREASE", SSL_OP_ECH_GREASE},
+#endif
+#ifdef SSL_OP_ECH_GREASE_RETRY_CONFIG
+    {"ECH_GREASE_RETRY_CONFIG", SSL_OP_ECH_GREASE_RETRY_CONFIG},
+#endif
+#ifdef SSL_OP_ECH_IGNORE_CID
+    {"ECH_IGNORE_CID", SSL_OP_ECH_IGNORE_CID},
+#endif
+#ifdef SSL_OP_ECH_TRIALDECRYPT
+    {"ECH_TRIALDECRYPT", SSL_OP_ECH_TRIALDECRYPT},
+#endif
     {NULL, 0}
 };
 
-NOEXPORT long unsigned parse_ssl_option(char *);
+NOEXPORT uint64_t parse_ssl_option(char *);
 NOEXPORT void print_ssl_options(void);
 
 NOEXPORT SOCK_OPT *socket_options_init(void);
@@ -311,7 +341,7 @@ NOEXPORT void print_syntax(void);
 
 NOEXPORT void name_list_append(NAME_LIST **, char *);
 NOEXPORT void name_list_dup(NAME_LIST **, NAME_LIST *);
-NOEXPORT void name_list_free(NAME_LIST *);
+NOEXPORT void name_list_free(NAME_LIST **);
 NOEXPORT void connect_session_free(SERVICE_OPTIONS *);
 #ifndef USE_WIN32
 NOEXPORT char **arg_alloc(char *);
@@ -462,7 +492,7 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
     const char *errstr;
     char config_line[CONFLINELEN], *config_opt, *config_arg;
     int i, line_number=0;
-    const u_char utf8_bom[] = {0xef, 0xbb, 0xbf};
+    const u_char utf8_bom[]={0xef, 0xbb, 0xbf};
 #ifndef USE_WIN32
     int fd;
     char *tmp_str;
@@ -620,12 +650,21 @@ int scandir(const char *dirp, struct dirent ***namelist,
     *namelist=NULL;
     do {
         if(num>=allocated) {
+            struct dirent **tmp;
+
             allocated+=16;
-            *namelist=realloc(*namelist, allocated*sizeof(**namelist));
+            tmp=realloc(*namelist, allocated*sizeof(**namelist));
+            if(!tmp) {
+                FindClose(h);
+                return -1;
+            }
+            *namelist=tmp;
         }
         (*namelist)[num]=malloc(sizeof(struct dirent));
-        if(!(*namelist)[num])
+        if(!(*namelist)[num]) {
+            FindClose(h);
             return -1;
+        }
         name=tstr2str(data.cFileName);
         strncpy((*namelist)[num]->d_name, name, MAX_PATH-1);
         (*namelist)[num]->d_name[MAX_PATH-1]='\0';
@@ -770,7 +809,7 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "compression"))
             break;
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER<0x10100000L
         /* only allow compression with OpenSSL 0.9.8 or later
          * with OpenSSL #1468 zlib memory leak fixed */
         if(OpenSSL_version_num()<0x00908051L) /* 0.9.8e-beta1 */
@@ -780,6 +819,12 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
             options->compression=COMP_DEFLATE;
         else if(!strcasecmp(arg, "zlib"))
             options->compression=COMP_ZLIB;
+#if OPENSSL_VERSION_NUMBER>=0x30200000L
+        else if(!strcasecmp(arg, "zstd"))
+            options->compression=COMP_ZSTD;
+        else if(!strcasecmp(arg, "brotli"))
+            options->compression=COMP_BROTLI;
+#endif /* OpenSSL version >= 3.2.0 */
         else
             return "Specified compression type is not available";
         return NULL; /* OK */
@@ -1536,7 +1581,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_local_addr=1;
         break;
     case CMD_FREE:
-        name_list_free(section->local_addr.names);
+        name_list_free(&section->local_addr.names);
         str_free(section->local_addr.addr);
         str_free(section->local_fd);
         break;
@@ -1545,7 +1590,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             break;
         section->option.accept=1;
         if(section->option.default_local_addr) {
-            name_list_free(section->local_addr.names);
+            name_list_free(&section->local_addr.names);
             addrlist_clear(&section->local_addr, 1);
             section->local_fd=NULL;
             section->option.default_local_addr=0;
@@ -1583,13 +1628,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_ca_engine=0;
         break;
     case CMD_FREE:
-        name_list_free(section->ca_engine);
+        name_list_free(&section->ca_engine);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "CAengine"))
             break;
         if(section->option.default_ca_engine) {
-            name_list_free(section->ca_engine);
+            name_list_free(&section->ca_engine);
             section->option.default_ca_engine=0;
         }
         name_list_append(&section->ca_engine, arg);
@@ -1722,13 +1767,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_cert=1;
         break;
     case CMD_FREE:
-        name_list_free(section->cert);
+        name_list_free(&section->cert);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "cert"))
             break;
         if(section->option.default_cert) {
-            name_list_free(section->cert);
+            name_list_free(&section->cert);
             section->option.default_cert=0;
         }
         name_list_append(&section->cert, arg);
@@ -1765,13 +1810,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_check_email=1;
         break;
     case CMD_FREE:
-        name_list_free(section->check_email);
+        name_list_free(&section->check_email);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "checkEmail"))
             break;
         if(section->option.default_check_email) {
-            name_list_free(section->check_email);
+            name_list_free(&section->check_email);
             section->option.default_check_email=0;
         }
         name_list_append(&section->check_email, arg);
@@ -1799,13 +1844,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_check_host=1;
         break;
     case CMD_FREE:
-        name_list_free(section->check_host);
+        name_list_free(&section->check_host);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "checkHost"))
             break;
         if(section->option.default_check_host) {
-            name_list_free(section->check_host);
+            name_list_free(&section->check_host);
             section->option.default_check_host=0;
         }
         name_list_append(&section->check_host, arg);
@@ -1833,13 +1878,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_check_ip=1;
         break;
     case CMD_FREE:
-        name_list_free(section->check_ip);
+        name_list_free(&section->check_ip);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "checkIP"))
             break;
         if(section->option.default_check_ip) {
-            name_list_free(section->check_ip);
+            name_list_free(&section->check_ip);
             section->option.default_check_ip=0;
         }
         name_list_append(&section->check_ip, arg);
@@ -2235,13 +2280,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_config=1;
         break;
     case CMD_FREE:
-        name_list_free(section->config);
+        name_list_free(&section->config);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "config"))
             break;
         if(section->option.default_config) {
-            name_list_free(section->config);
+            name_list_free(&section->config);
             section->option.default_config=0;
         }
         name_list_append(&section->config, arg);
@@ -2272,7 +2317,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_connect_addr=1;
         break;
     case CMD_FREE:
-        name_list_free(section->connect_addr.names);
+        name_list_free(&section->connect_addr.names);
         str_free(section->connect_addr.addr);
         connect_session_free(section);
         break;
@@ -2280,7 +2325,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         if(strcasecmp(opt, "connect"))
             break;
         if(section->option.default_connect_addr) {
-            name_list_free(section->connect_addr.names);
+            name_list_free(&section->connect_addr.names);
             addrlist_clear(&section->connect_addr, 0);
             section->connect_session=NULL;
             section->option.default_connect_addr=0;
@@ -3015,7 +3060,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             break;
 #if OPENSSL_VERSION_NUMBER>=0x009080dfL
         if(*arg=='-') {
-            long unsigned tmp=parse_ssl_option(arg+1);
+            uint64_t tmp=parse_ssl_option(arg+1);
+
             if(tmp==INVALID_SSL_OPTION)
                 return "Illegal TLS option";
             section->ssl_options_clear|=tmp;
@@ -3023,7 +3069,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         }
 #endif /* OpenSSL 0.9.8m or later */
         {
-            long unsigned tmp=parse_ssl_option(arg);
+            uint64_t tmp=parse_ssl_option(arg);
+
             if(tmp==INVALID_SSL_OPTION)
                 return "Illegal TLS option";
             section->ssl_options_set|=tmp;
@@ -3145,13 +3192,13 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_protocol_header=1;
         break;
     case CMD_FREE:
-        name_list_free(section->protocol_header);
+        name_list_free(&section->protocol_header);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "protocolHeader"))
             break;
         if(section->option.default_protocol_header) {
-            name_list_free(section->protocol_header);
+            name_list_free(&section->protocol_header);
             section->option.default_protocol_header=0;
         }
         name_list_append(&section->protocol_header, arg);
@@ -3375,14 +3422,14 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->option.default_redirect_addr=1;
         break;
     case CMD_FREE:
-        name_list_free(section->redirect_addr.names);
+        name_list_free(&section->redirect_addr.names);
         str_free(section->redirect_addr.addr);
         break;
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "redirect"))
             break;
         if(section->option.default_redirect_addr) {
-            name_list_free(section->redirect_addr.names);
+            name_list_free(&section->redirect_addr.names);
             str_free(section->redirect_addr.addr);
             addrlist_clear(&section->redirect_addr, 0);
             section->option.default_redirect_addr=0;
@@ -4707,7 +4754,7 @@ NOEXPORT const char *parse_debug_level(char *arg, SERVICE_OPTIONS *section) {
 
 /* facilities only make sense on unix */
 #if !defined (USE_WIN32) && !defined (__vms)
-    facilitylevel facilities[] = {
+    facilitylevel facilities[]={
         {"auth", LOG_AUTH},     {"cron", LOG_CRON},     {"daemon", LOG_DAEMON},
         {"kern", LOG_KERN},     {"lpr", LOG_LPR},       {"mail", LOG_MAIL},
         {"news", LOG_NEWS},     {"syslog", LOG_SYSLOG}, {"user", LOG_USER},
@@ -4729,7 +4776,7 @@ NOEXPORT const char *parse_debug_level(char *arg, SERVICE_OPTIONS *section) {
     };
 #endif /* USE_WIN32, __vms */
 
-    facilitylevel levels[] = {
+    facilitylevel levels[]={
         {"emerg", LOG_EMERG},     {"alert", LOG_ALERT},
         {"crit", LOG_CRIT},       {"err", LOG_ERR},
         {"warning", LOG_WARNING}, {"notice", LOG_NOTICE},
@@ -4775,7 +4822,7 @@ NOEXPORT const char *parse_debug_level(char *arg, SERVICE_OPTIONS *section) {
 
 /**************************************** TLS options */
 
-NOEXPORT long unsigned parse_ssl_option(char *arg) {
+NOEXPORT uint64_t parse_ssl_option(char *arg) {
     const SSL_OPTION *option;
 
     for(option=ssl_opts; option->name; ++option)
@@ -5285,7 +5332,7 @@ NOEXPORT unsigned long parse_ocsp_flag(char *arg) {
     struct {
         const char *name;
         unsigned long value;
-    } ocsp_opts[] = {
+    } ocsp_opts[]={
         {"NOCERTS", OCSP_NOCERTS},
         {"NOINTERN", OCSP_NOINTERN},
         {"NOSIGS", OCSP_NOSIGS},
@@ -5369,7 +5416,7 @@ NOEXPORT const char *engine_open(const char *name) {
             current_engine+1, ENGINE_get_id(e));
     }
 
-    if(ENGINE_ctrl(e, ENGINE_CTRL_SET_USER_INTERFACE, 0, ui_stunnel(), NULL)) {
+    if(ENGINE_ctrl(e, ENGINE_CTRL_SET_USER_INTERFACE, 0, ui_stunnel, NULL)) {
         s_log(LOG_NOTICE, "UI set for engine #%d (%s)",
             current_engine+1, ENGINE_get_id(e));
     } else {
@@ -5568,11 +5615,16 @@ NOEXPORT void name_list_append(NAME_LIST **ptr, char *name) {
 }
 
 NOEXPORT void name_list_dup(NAME_LIST **dst, NAME_LIST *src) {
+    *dst=NULL;
     for(; src; src=src->next)
         name_list_append(dst, src->name);
 }
 
-NOEXPORT void name_list_free(NAME_LIST *ptr) {
+NOEXPORT void name_list_free(NAME_LIST **dst) {
+    NAME_LIST *ptr;
+
+    ptr=*dst;
+    *dst=NULL; /* detach */
     while(ptr) {
         NAME_LIST *next=ptr->next;
         str_free(ptr->name);

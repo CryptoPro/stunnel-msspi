@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -147,6 +147,8 @@ void main_init(void) { /* one-time initialization */
 #endif /* NO_OPENSSLOFF */
     if(sthreads_init()) /* initialize critical sections & TLS callbacks */
         fatal("Threads initialization failed");
+    if(ctx_init()) /* initialize shared data for SSL_CTX */
+        fatal("SSL_CTX initialization failed");
     options_defaults(); /* initialize defaults */
     options_apply(); /* apply the defaults */
 #ifndef USE_FORK
@@ -260,10 +262,22 @@ int drop_privileges(int critical) {
 }
 
 void main_cleanup(void) {
-    terminate_threads();
+    /* stop accepting new connections */
     unbind_ports();
     s_poll_free(fds);
     fds=NULL;
+
+    /* release per-client resources */
+    terminate_threads(); /* kill and join */
+    options_free(1); /* drop our reference to services */
+    /* TODO: force releasing options for references held by killed threads */
+
+    /* release shared resources */
+    ctx_cleanup();
+    ssl_cleanup();
+    crypto_cleanup(); /* no OpenSSL functionality beyond this point */
+
+    /* disable logging */
 #if 0
     str_stats(); /* main thread allocation tracking */
 #endif

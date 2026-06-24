@@ -1,4 +1,4 @@
-# NSIS stunnel installer by Michal Trojnara 1998-2025
+# NSIS stunnel installer by Michal Trojnara 1998-2026
 
 !define /ifndef VERSION testing
 !define /ifndef ARCH win32

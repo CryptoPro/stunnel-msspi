@@ -1,6 +1,6 @@
 /*
  *   stunnel       TLS offloading and load-balancing proxy
- *   Copyright (C) 1998-2025 Michal Trojnara <Michal.Trojnara@stunnel.org>
+ *   Copyright (C) 1998-2026 Michal Trojnara <Michal.Trojnara@stunnel.org>
  *
  *   This program is free software; you can redistribute it and/or modify it
  *   under the terms of the GNU General Public License as published by the
@@ -64,14 +64,9 @@ NOEXPORT void per_minute_worker(void);
 NOEXPORT void per_minute_stapling_update(void);
 NOEXPORT void per_day_worker(void);
 #ifndef OPENSSL_NO_DH
-#if OPENSSL_VERSION_NUMBER>=0x0090800fL
 NOEXPORT void per_day_dh_param(BN_GENCB *);
 NOEXPORT BN_GENCB *per_day_bn_gencb(void);
 NOEXPORT int bn_callback(int, int, BN_GENCB *);
-#else /* OpenSSL older than 0.9.8 */
-NOEXPORT void per_day_dh_param(void);
-NOEXPORT void dh_callback(int, int, void *);
-#endif /* OpenSSL 0.9.8 or later */
 #endif /* OPENSSL_NO_DH */
 #endif /* USE_OS_THREADS */
 
@@ -232,23 +227,15 @@ NOEXPORT void per_minute_stapling_update(void) {
 NOEXPORT void per_day_worker(void) {
     time_t now, then;
     int delay;
-#if !defined(OPENSSL_NO_DH) && OPENSSL_VERSION_NUMBER>=0x0090800fL
     BN_GENCB *bn_gencb;
-#endif
 
     s_log(LOG_DEBUG, "Per-day thread initialized");
-#if !defined(OPENSSL_NO_DH) && OPENSSL_VERSION_NUMBER>=0x0090800fL
     bn_gencb=per_day_bn_gencb();
-#endif
     time(&then);
     for(;;) {
         s_log(LOG_INFO, "Executing per-day jobs");
 #ifndef OPENSSL_NO_DH
-#if OPENSSL_VERSION_NUMBER>=0x0090800fL
         per_day_dh_param(bn_gencb);
-#else /* OpenSSL older than 0.9.8 */
-        per_day_dh_param();
-#endif /* OpenSSL 0.9.8 or later */
 #endif /* OPENSSL_NO_DH */
         time(&now);
         s_log(LOG_INFO, "Per-day jobs completed in %d seconds", (int)(now-then));
@@ -273,11 +260,7 @@ NOEXPORT void per_day_worker(void) {
 
 #ifndef OPENSSL_NO_DH
 
-#if OPENSSL_VERSION_NUMBER>=0x0090800fL
 NOEXPORT void per_day_dh_param(BN_GENCB *bn_gencb) {
-#else /* OpenSSL older than 0.9.8 */
-NOEXPORT void per_day_dh_param(void) {
-#endif /* OpenSSL 0.9.8 or later */
     SERVICE_OPTIONS *opt;
     DH *dh;
 
@@ -285,7 +268,6 @@ NOEXPORT void per_day_dh_param(void) {
         return;
 
     s_log(LOG_NOTICE, "Updating DH parameters");
-#if OPENSSL_VERSION_NUMBER>=0x0090800fL
     /* generate 2048-bit DH parameters */
     dh=DH_new();
     if(!dh) {
@@ -297,13 +279,6 @@ NOEXPORT void per_day_dh_param(void) {
         ssl_error(NULL, "DH_generate_parameters_ex");
         return;
     }
-#else /* OpenSSL older than 0.9.8 */
-    dh=DH_generate_parameters(2048, 2, dh_callback, NULL);
-    if(!dh) {
-        ssl_error(NULL, "DH_generate_parameters");
-        return;
-    }
-#endif /* OpenSSL 0.9.8 or later */
 
     /* update global dh_params for future configuration reloads */
     CRYPTO_THREAD_write_lock(stunnel_locks[LOCK_DH]);
@@ -319,8 +294,6 @@ NOEXPORT void per_day_dh_param(void) {
     CRYPTO_THREAD_unlock(stunnel_locks[LOCK_SECTIONS]);
     s_log(LOG_NOTICE, "DH parameters updated");
 }
-
-#if OPENSSL_VERSION_NUMBER>=0x0090800fL
 
 NOEXPORT BN_GENCB *per_day_bn_gencb(void) {
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
@@ -348,17 +321,6 @@ NOEXPORT int bn_callback(int p, int n, BN_GENCB *cb) {
     s_poll_sleep(0, 100); /* 100ms */
     return 1; /* return nonzero for success */
 }
-
-#else /* OpenSSL older than 0.9.8 */
-
-NOEXPORT void dh_callback(int p, int n, void *arg) {
-    (void)p; /* squash the unused parameter warning */
-    (void)n; /* squash the unused parameter warning */
-    (void)arg; /* squash the unused parameter warning */
-    s_poll_sleep(0, 100); /* 100ms */
-}
-
-#endif /* OpenSSL 0.9.8 or later */
 
 #endif /* OPENSSL_NO_DH */
 
