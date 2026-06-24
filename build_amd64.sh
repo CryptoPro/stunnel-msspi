@@ -14,7 +14,11 @@ fi
 
 autoreconf -fvi && touch src/dhparam.c
 ./configure $CONFIGURE_OPTIONS || exit 1
-make || exit 1
+if [ "$MSSPI" = "yes" ]; then
+    make -C src stunnel || exit 1
+else
+    make || exit 1
+fi
 
 if [ -z "$MSSPI" ]; then 
     make test || ( for FILE in tests/logs/*.log; do echo "*** $FILE ***"; cat "$FILE"; done; false ); 
