@@ -538,6 +538,7 @@ typedef enum {
 struct client_data_struct {
 #ifdef MSSPISSL
     MSSPI_HANDLE msh;
+    int msspi_peer_verified;
     SOCKET rfd;
     SOCKET wfd;
 #endif

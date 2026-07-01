@@ -275,6 +275,13 @@ NOEXPORT void print_bound_address(CLI *);
 NOEXPORT void reset(SOCKET, const char *);
 NOEXPORT void check_socket_error(CLI *, SOCKET, const char *);
 
+#ifdef MSSPISSL
+NOEXPORT int stunnel_msspi_cert_cb(void *);
+NOEXPORT int msspi_load_own_certs(CLI *);
+NOEXPORT int msspi_verify_peer(CLI *);
+static int msspi_no_resume_cache_id=0;
+#endif
+
 /* allocate local data structure for the new thread */
 CLI *alloc_client_session(SERVICE_OPTIONS *opt, SOCKET rfd, SOCKET wfd) {
     static unsigned long long seq=0;
@@ -773,6 +780,247 @@ NOEXPORT void remote_start(CLI *c) {
         (long)c->remote_fd.fd);
 }
 
+#ifdef MSSPISSL
+NOEXPORT int msspi_load_own_certs(CLI *c) {
+    size_t j;
+
+    for(j=0; j<2; j++) {
+        char *cert=j==0 ? (c->opt->cert ? c->opt->cert->name : NULL) : c->opt->cert2;
+        char *pin=j==0 ? c->opt->pin : c->opt->pin2;
+        char *pcerttype=j==0 ? &c->opt->certtype : &c->opt->certtype2;
+        /* certtype: 0 unknown, 1 selector, 2 pfx string, 3 cert file, 4 pfx file */
+        char certtype=*pcerttype;
+        char is_ok=0;
+        char is_pfx=0;
+        char is_cert_file=0;
+
+        if(!cert) {
+            is_ok=1;
+        } else if((certtype==0 || certtype==1) &&
+                msspi_add_mycert(c->msh, (const uint8_t *)cert, strlen(cert))) {
+            certtype=1;
+            *pcerttype=certtype;
+            is_ok=1;
+        } else if(pin && (certtype==0 || certtype==2) &&
+                msspi_add_mycert_pfx(c->msh, (const uint8_t *)cert, strlen(cert),
+                    (const uint8_t *)pin, strlen(pin))) {
+            certtype=2;
+            *pcerttype=certtype;
+            is_ok=1;
+            is_pfx=1;
+        }
+
+        if(!is_ok) {
+            const long int MAX_SIZE=1024*1024;
+            const char *errstr="unknown";
+            long int size_file=0;
+            FILE *cert_file=NULL;
+            char *str_file=NULL;
+
+            s_log(LOG_INFO, "msspi: try open cert = \"%s\" as file", cert);
+
+            for(;;) {
+                if((cert_file=fopen(cert, "rb"))==NULL) {
+                    errstr="can not open file";
+                    break;
+                }
+                if(fseek(cert_file, 0, SEEK_END)==-1L) {
+                    errstr="can not read file";
+                    break;
+                }
+                if((size_file=ftell(cert_file))>MAX_SIZE) {
+                    errstr="file too large";
+                    break;
+                }
+                if(fseek(cert_file, 0, 0)==-1L) {
+                    errstr="can not read file";
+                    break;
+                }
+                if((str_file=(char *)malloc(sizeof(char)*(size_t)size_file))==NULL) {
+                    errstr="can not allocate memory for file";
+                    break;
+                }
+                if(fread(str_file, sizeof(char), (size_t)size_file, cert_file) !=
+                        (unsigned long int)size_file) {
+                    errstr="can not read file";
+                    break;
+                }
+                if(certtype==0) { /* CPCSP-14527 better diagnostic flow */
+                    MSSPI_CERT_HANDLE ch=msspi_cert_open((const uint8_t *)str_file, (size_t)size_file);
+                    if(ch) {
+                        is_cert_file=1;
+                        msspi_cert_close(ch);
+                    }
+                } else if(certtype==3) {
+                    is_cert_file=1;
+                }
+
+                if(is_cert_file &&
+                        msspi_add_mycert(c->msh, (const uint8_t *)str_file, (size_t)size_file)) {
+                    certtype=3;
+                    *pcerttype=certtype;
+                    is_ok=1;
+                    break;
+                }
+                if(is_cert_file) {
+                    errstr="not found in certstore";
+                    break;
+                }
+                if(pin && (certtype==0 || certtype==4) &&
+                        msspi_add_mycert_pfx(c->msh, (const uint8_t *)str_file, (size_t)size_file,
+                            (const uint8_t *)pin, strlen(pin))) {
+                    certtype=4;
+                    *pcerttype=certtype;
+                    is_ok=1;
+                    is_pfx=1;
+                    break;
+                }
+                errstr="not cert or pfx";
+                break;
+            }
+
+            if(cert_file)
+                fclose(cert_file);
+            if(str_file)
+                free(str_file);
+            if(!is_ok) {
+                s_log(LOG_ERR, "msspi: add_mycert failed: \"%s\" (cert = \"%s\")", errstr, cert);
+                return 0;
+            }
+        }
+
+        if(cert && !is_pfx && !msspi_set_mycert_options(c->msh,
+                c->opt->option.silent, (const uint8_t *)pin, pin ? strlen(pin) : 0,
+                c->opt->option.selftest)) {
+            s_log(LOG_ERR,
+                "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\", silent = \"%s\", selftest = \"%s\")",
+                cert, pin ? pin : "", c->opt->option.silent ? "yes" : "no",
+                c->opt->option.selftest ? "yes" : "no");
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+NOEXPORT int msspi_verify_peer(CLI *c) {
+    if(c->opt->option.require_cert) {
+        size_t count=0;
+        if(!msspi_get_peercerts(c->msh, 0, 0, &count) || count==0) {
+            s_log(LOG_ERR, "msspi: no peer cert (require_cert = 1)");
+            return 0;
+        }
+    }
+
+    if(c->opt->option.verify_chain) {
+        int level=LOG_ERR;
+        const char *errinfo="failed (MSSPI_VERIFY_ERROR)";
+        uint32_t verify_status=(uint32_t)-1;
+        msspi_get_verify_status(c->msh, &verify_status);
+        switch(verify_status) {
+        case 0:
+            level=LOG_INFO;
+            errinfo="OK";
+            break;
+        case CERT_E_CN_NO_MATCH:
+            if(c->opt->sni && c->opt->check_host) {
+                NAME_LIST *ptr;
+                for(ptr=c->opt->check_host; ptr; ptr=ptr->next) {
+                    msspi_set_hostname(c->msh, (const uint8_t *)ptr->name, strlen(ptr->name));
+                    msspi_get_verify_status(c->msh, &verify_status);
+                    if(verify_status==0)
+                        break;
+                }
+
+                msspi_set_hostname(c->msh, (const uint8_t *)c->opt->sni, strlen(c->opt->sni));
+
+                if(ptr) {
+                    level=LOG_INFO;
+                    errinfo="OK";
+                    break;
+                }
+            }
+            errinfo="failed (CERT_E_CN_NO_MATCH)";
+            break;
+        default:
+            break;
+        }
+
+        s_log(level, "msspi: verify %s", errinfo);
+        if(level==LOG_ERR)
+            return 0;
+    }
+
+    if(c->opt->option.verify_peer) {
+        uint32_t verify_peer_status=(uint32_t)-1;
+        msspi_get_peercert_in_store_status(c->msh,
+            (const uint8_t *)c->opt->ca_dir, strlen(c->opt->ca_dir),
+            &verify_peer_status);
+        if(verify_peer_status) {
+            s_log(LOG_ERR, "msspi: verifypeer failed (CApath = \"%s\")", c->opt->ca_dir);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: verifypeer OK");
+    }
+
+    if(c->opt->checkSubject) {
+        NAME_LIST *ptr;
+        const uint8_t *subject;
+        size_t len;
+        if(!msspi_get_peernames(c->msh, &subject, &len, NULL, NULL)) {
+            s_log(LOG_ERR, "msspi: get_peernames( subject ) failed");
+            return 0;
+        }
+
+        for(ptr=c->opt->checkSubject; ptr; ptr=ptr->next)
+            if(strlen(ptr->name)+1==len && !memcmp(ptr->name, subject, len))
+                break;
+
+        if(!ptr) {
+            s_log(LOG_ERR, "msspi: checkSubject failed (subject = \"%s\")", (const char *)subject);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: checkSubject OK");
+    }
+
+    if(c->opt->checkIssuer) {
+        NAME_LIST *ptr;
+        const uint8_t *issuer;
+        size_t len;
+        if(!msspi_get_peernames(c->msh, NULL, NULL, &issuer, &len)) {
+            s_log(LOG_ERR, "msspi: get_peernames( issuer ) failed");
+            return 0;
+        }
+
+        for(ptr=c->opt->checkIssuer; ptr; ptr=ptr->next)
+            if(strlen(ptr->name)+1==len && !memcmp(ptr->name, issuer, len))
+                break;
+
+        if(!ptr) {
+            s_log(LOG_ERR, "msspi: checkIssuer failed (issuer = \"%s\")", (const char *)issuer);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: checkIssuer OK");
+    }
+
+    return 1;
+}
+
+NOEXPORT int stunnel_msspi_cert_cb(void *arg) {
+    CLI *c=(CLI *)arg;
+
+    if(!c || !c->msh)
+        return 0;
+    if(!msspi_verify_peer(c))
+        return 0;
+    c->msspi_peer_verified=1;
+    return msspi_load_own_certs(c);
+}
+#endif /* MSSPISSL */
+
 NOEXPORT void ssl_start(CLI *c) {
     int i, err;
     SSL_SESSION *sess;
@@ -831,10 +1079,9 @@ NOEXPORT void ssl_start(CLI *c) {
 
 #ifdef MSSPISSL
     c->msh = NULL;
+    c->msspi_peer_verified = 0;
     if( c->opt->option.msspi )
     {
-        size_t j;
-
         if( c->opt->option.client )
             c->rfd = c->wfd = c->remote_fd.fd;
         else
@@ -848,7 +1095,25 @@ NOEXPORT void ssl_start(CLI *c) {
             throw_exception( c, 1 );
         }
 
-        msspi_set_version( c->msh, c->opt->min_proto_version, c->opt->max_proto_version );
+        if( c->opt->option.client && !c->opt->option.session_resume )
+        {
+            int cache_id;
+#ifdef USE_OS_THREADS
+            CRYPTO_atomic_add( &msspi_no_resume_cache_id, 1, &cache_id, stunnel_locks[LOCK_CLIENTS] );
+#else
+            cache_id = ++msspi_no_resume_cache_id;
+#endif
+            if( !msspi_set_cachestring( c->msh, (const uint8_t *)&cache_id, sizeof cache_id ) )
+            {
+                s_log( LOG_ERR, "msspi: failed to set no-resume credential cache string" );
+                throw_exception( c, 1 );
+            }
+        }
+
+        /* Preserve MSSPI provider defaults when stunnel min/max are unset:
+         * grbitEnabledProtocols must remain 0, not an explicit all-protocols mask. */
+        if( c->opt->min_proto_version || c->opt->max_proto_version )
+            msspi_set_version( c->msh, c->opt->min_proto_version, c->opt->max_proto_version );
 
         if( c->opt->sni )
             msspi_set_hostname( c->msh, (const uint8_t *)c->opt->sni, strlen( c->opt->sni ) );
@@ -862,138 +1127,10 @@ NOEXPORT void ssl_start(CLI *c) {
         if( c->opt->cipher_list )
             msspi_set_cipherlist( c->msh, (const uint8_t *)c->opt->cipher_list, strlen( c->opt->cipher_list ) );
 
-        for( j = 0; j < 2; j++ )
-        {
-            char * cert = j == 0 ? (c->opt->cert ? c->opt->cert->name : NULL) : c->opt->cert2;
-            char * pin = j == 0 ? c->opt->pin : c->opt->pin2;
-            char * pcerttype = j == 0 ? &c->opt->certtype : &c->opt->certtype2;
-            // certtype:
-            // 0 - not detected yet
-            // 1 - string with thumbprint or name
-            // 2 - string with pfx
-            // 3 - path to cert file
-            // 4 - path to pfx file
-            char certtype = *pcerttype;
-            char is_ok = 0;
-            char is_pfx = 0;
-            char is_cert_file = 0;
-
-            if( !cert )
-            {
-                is_ok = 1;
-            }
-            else if( ( certtype == 0 || certtype == 1 ) && msspi_add_mycert( c->msh, (const uint8_t *)cert, strlen( cert ) ) )
-            {
-                certtype = 1;
-                *pcerttype = certtype;
-                is_ok = 1;
-            }
-            else if( pin && ( certtype == 0 || certtype == 2 ) && msspi_add_mycert_pfx( c->msh, (const uint8_t *)cert, strlen( cert ), (const uint8_t *)pin, strlen( pin ) ) )
-            {
-                certtype = 2;
-                *pcerttype = certtype;
-                is_ok = 1;
-                is_pfx = 1;
-            }
-
-            if( !is_ok )
-            {
-                const long int MAX_SIZE = 1024 * 1024;
-                const char *errstr = "unknown";
-                long int size_file = 0;
-                FILE *cert_file = NULL;
-                char *str_file = NULL;
-
-                s_log( LOG_INFO, "msspi: try open cert = \"%s\" as file", cert );
-
-                for( ;; )
-                {
-                    if( ( cert_file = fopen( cert, "rb" ) ) == NULL )
-                    {
-                        errstr = "can not open file";
-                        break;
-                    }
-                    if( fseek( cert_file, 0, SEEK_END ) == -1L )
-                    {
-                        errstr = "can not read file";
-                        break;
-                    }
-                    if( ( size_file = ftell( cert_file ) ) > MAX_SIZE )
-                    {
-                        errstr = "file too large";
-                        break;
-                    }
-                    if( ( fseek( cert_file, 0, 0 ) ) == -1L )
-                    {
-                        errstr = "can not read file";
-                        break;
-                    }
-                    if( ( str_file = (char *)malloc( sizeof( char ) * (size_t)size_file ) ) == NULL )
-                    {
-                        errstr = "can not allocate memory for file";
-                        break;
-                    }
-                    if( fread( str_file, sizeof( char ), (size_t)size_file, cert_file ) != ( unsigned long int )size_file )
-                    {
-                        errstr = "can not read file";
-                        break;
-                    }
-                    // CPCSP-14527 better diagnostic flow
-                    if( certtype == 0 )
-                    {
-                        MSSPI_CERT_HANDLE ch = msspi_cert_open( (const uint8_t *)str_file, (size_t)size_file );
-                        if( ch )
-                        {
-                            is_cert_file = 1;
-                            msspi_cert_close( ch );
-                        }
-                    }
-                    else
-                    if( certtype == 3 )
-                    {
-                        is_cert_file = 1;
-                    }
-
-                    if( is_cert_file && msspi_add_mycert( c->msh, (const uint8_t *)str_file, (size_t)size_file ) )
-                    {
-                        certtype = 3;
-                        *pcerttype = certtype;
-                        is_ok = 1;
-                        break;
-                    }
-                    if( is_cert_file )
-                    {
-                        errstr = "not found in certstore";
-                        break;
-                    }
-                    if( pin && ( certtype == 0 || certtype == 4 ) && msspi_add_mycert_pfx( c->msh, (const uint8_t *)str_file, (size_t)size_file, (const uint8_t *)pin, strlen( pin ) ) )
-                    {
-                        certtype = 4;
-                        *pcerttype = certtype;
-                        is_ok = 1;
-                        is_pfx = 1;
-                        break;
-                    }
-                    errstr = "not cert or pfx";
-                    break;
-                }
-
-                if( cert_file ) fclose( cert_file );
-                if( str_file ) free( str_file );
-                if( !is_ok )
-                {
-                    s_log( LOG_ERR, "msspi: add_mycert failed: \"%s\" (cert = \"%s\")", errstr, cert );
-                    throw_exception( c, 1 );
-                }
-            }
-
-            if( cert && !is_pfx && !msspi_set_mycert_options( c->msh, c->opt->option.silent, (const uint8_t *)pin, pin ? strlen( pin ) : 0, c->opt->option.selftest) )
-            {
-                s_log( LOG_ERR, "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\", silent = \"%s\", selftest = \"%s\")",
-                    cert, pin ? pin : "", c->opt->option.silent ? "yes" : "no", c->opt->option.selftest ? "yes" : "no");
-                throw_exception( c, 1 );
-            }
-        }
+        if( c->opt->option.client )
+            msspi_set_cert_cb( c->msh, stunnel_msspi_cert_cb );
+        else if( !msspi_load_own_certs( c ) )
+            throw_exception( c, 1 );
     }
 #endif /* MSSPISSL */
 
@@ -1106,123 +1243,8 @@ NOEXPORT void ssl_start(CLI *c) {
                    cipherinfo->dwCipherSuite );
         }
 
-        if( c->opt->option.require_cert )
-        {
-            size_t count = 0;
-            if( !msspi_get_peercerts( c->msh, 0, 0, &count ) || count == 0 )
-            {
-                s_log( LOG_ERR, "msspi: no peer cert (require_cert = 1)" );
-                throw_exception( c, 1 );
-            }
-        }
-
-        if( c->opt->option.verify_chain )
-        {
-            int level = LOG_ERR;
-            const char * errinfo = "failed (MSSPI_VERIFY_ERROR)";
-            uint32_t verify_status = (uint32_t)-1;
-            msspi_get_verify_status( c->msh, &verify_status );
-            switch( verify_status )
-            {
-            case 0:
-                level = LOG_INFO;
-                errinfo = "OK";
-                break;
-            case CERT_E_CN_NO_MATCH:
-            {
-                if( c->opt->sni && c->opt->check_host )
-                {
-                    NAME_LIST * ptr;
-                    for( ptr = c->opt->check_host; ptr; ptr = ptr->next )
-                    {
-                        msspi_set_hostname( c->msh, (const uint8_t *)ptr->name, strlen( ptr->name ) );
-                        msspi_get_verify_status( c->msh, &verify_status );
-                        if( verify_status == 0 )
-                            break;
-                    }
-
-                    msspi_set_hostname( c->msh, (const uint8_t *)c->opt->sni, strlen( c->opt->sni ) );
-
-                    if( ptr )
-                    {
-                        level = LOG_INFO;
-                        errinfo = "OK";
-                        break;
-                    }
-                }
-
-                errinfo = "failed (CERT_E_CN_NO_MATCH)";
-                break;
-            }
-            default:
-                break;
-            }
-
-            s_log( level, "msspi: verify %s", errinfo );
-            if( level == LOG_ERR )
-                throw_exception( c, 1 );
-        }
-
-        if( c->opt->option.verify_peer )
-        {
-            uint32_t verify_peer_status = (uint32_t)-1;
-            msspi_get_peercert_in_store_status( c->msh, (const uint8_t *)c->opt->ca_dir, strlen( c->opt->ca_dir ), &verify_peer_status );
-            if( verify_peer_status )
-            {
-                s_log( LOG_ERR, "msspi: verifypeer failed (CApath = \"%s\")", c->opt->ca_dir );
-                throw_exception( c, 1 );
-            }
-
-            s_log( LOG_INFO, "msspi: verifypeer OK" );
-        }
-
-        if( c->opt->checkSubject )
-        {
-            NAME_LIST * ptr;
-            const uint8_t * subject;
-            size_t len;
-            if( !msspi_get_peernames( c->msh, &subject, &len, NULL, NULL ) )
-            {
-                s_log( LOG_ERR, "msspi: get_peernames( subject ) failed" );
-                throw_exception( c, 1 );
-            }
-
-            for( ptr = c->opt->checkSubject; ptr; ptr = ptr->next )
-                if( strlen( ptr->name ) + 1 == len && !memcmp( ptr->name, subject, len ) )
-                    break;
-
-            if( !ptr )
-            {
-                s_log( LOG_ERR, "msspi: checkSubject failed (subject = \"%s\")", (const char *)subject );
-                throw_exception( c, 1 );
-            }
-
-            s_log( LOG_INFO, "msspi: checkSubject OK" );
-        }
-
-        if( c->opt->checkIssuer )
-        {
-            NAME_LIST * ptr;
-            const uint8_t * issuer;
-            size_t len;
-            if( !msspi_get_peernames( c->msh, NULL, NULL, &issuer, &len ) )
-            {
-                s_log( LOG_ERR, "msspi: get_peernames( issuer ) failed" );
-                throw_exception( c, 1 );
-            }
-
-            for( ptr = c->opt->checkIssuer; ptr; ptr = ptr->next )
-                if( strlen( ptr->name ) + 1 == len && !memcmp( ptr->name, issuer, len ) )
-                    break;
-
-            if( !ptr )
-            {
-                s_log( LOG_ERR, "msspi: checkIssuer failed (issuer = \"%s\")", (const char *)issuer );
-                throw_exception( c, 1 );
-            }
-
-            s_log( LOG_INFO, "msspi: checkIssuer OK" );
-        }
+        if( !c->msspi_peer_verified && !msspi_verify_peer( c ) )
+            throw_exception( c, 1 );
 
         return;
     }
