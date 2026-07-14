@@ -1095,7 +1095,7 @@ NOEXPORT void ssl_start(CLI *c) {
             throw_exception( c, 1 );
         }
 
-        if( c->opt->option.client && !c->opt->option.session_resume )
+        if( !c->opt->option.session_resume )
         {
             int cache_id;
 #ifdef USE_OS_THREADS
