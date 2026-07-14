@@ -418,6 +418,9 @@ struct service_options_struct {
     struct {
 #ifdef MSSPISSL
         unsigned msspi:1;               /* use msspi */
+#ifdef MSSPI_LINUX
+        unsigned for_hsm:1;             /* CryptoPro HSM Unix credential handshake */
+#endif
         unsigned silent:1;
         unsigned selftest:1;
 #endif

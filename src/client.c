@@ -38,6 +38,117 @@
 #include "common.h"
 #include "prototypes.h"
 
+#ifdef MSSPI_LINUX
+#include <dlfcn.h>
+#include <stdint.h>
+
+#if defined(__mips__)
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define CPRO_LIBDIR "/opt/cprocsp/lib/mipsel/"
+#else
+#define CPRO_LIBDIR "/opt/cprocsp/lib/mips/"
+#endif
+#elif defined(__arm__)
+#define CPRO_LIBDIR "/opt/cprocsp/lib/arm/"
+#elif defined(__aarch64__)
+#define CPRO_LIBDIR "/opt/cprocsp/lib/aarch64/"
+#elif defined(__e2k__) || defined(__PPC64__)
+#define CPRO_LIBDIR "/opt/cprocsp/lib/lib64/"
+#elif defined(__i386__)
+#define CPRO_LIBDIR "/opt/cprocsp/lib/ia32/"
+#else
+#define CPRO_LIBDIR "/opt/cprocsp/lib/amd64/"
+#endif
+
+#define LIBCSPR_NAME "libcspr.so"
+#define LIBCSPR_PATH CPRO_LIBDIR LIBCSPR_NAME
+
+typedef uint32_t (*WIRE_SEND)(int);
+typedef uint32_t (*WIRE_RECV)(int, uid_t *, gid_t *);
+
+static WIRE_SEND wire_send;
+static WIRE_RECV wire_recv;
+static int wire_loaded;
+
+NOEXPORT void wire_load(void) {
+    void *lib;
+    const char *error;
+
+    lib=dlopen(LIBCSPR_PATH, RTLD_LAZY | RTLD_LOCAL);
+    if(!lib)
+        lib=dlopen(LIBCSPR_NAME, RTLD_LAZY | RTLD_LOCAL);
+    if(!lib) {
+        error=dlerror();
+        s_log(LOG_ERR, "for_hsm: unable to load %s: %s",
+            LIBCSPR_NAME, error ? error : "unknown error");
+        return;
+    }
+
+    dlerror();
+    *(void **)&wire_send=dlsym(lib, "WireSendFDnEUID");
+    error=dlerror();
+    if(error || !wire_send) {
+        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID is unavailable: %s",
+            error ? error : "symbol not found");
+        return;
+    }
+
+    dlerror();
+    *(void **)&wire_recv=dlsym(lib, "WireRecvFDnEUID");
+    error=dlerror();
+    if(error || !wire_recv) {
+        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID is unavailable: %s",
+            error ? error : "symbol not found");
+        return;
+    }
+
+    wire_loaded=1;
+}
+
+NOEXPORT int wire_load_once(void) {
+#ifdef USE_PTHREAD
+    static pthread_once_t once=PTHREAD_ONCE_INIT;
+
+    if(pthread_once(&once, wire_load)) {
+        s_log(LOG_ERR, "for_hsm: pthread_once failed");
+        return 0;
+    }
+#else
+    static int initialized;
+
+    if(!initialized) {
+        wire_load();
+        initialized=1;
+    }
+#endif
+    return wire_loaded;
+}
+
+NOEXPORT int wire_send_credentials(SOCKET fd) {
+    uint32_t result;
+
+    if(!wire_load_once())
+        return 0;
+    result=wire_send((int)fd);
+    if(result)
+        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID failed: 0x%08x",
+            (unsigned)result);
+    return result==0;
+}
+
+NOEXPORT int wire_receive_credentials(SOCKET fd, uid_t *uid, gid_t *gid) {
+    uint32_t result;
+
+    if(!wire_load_once())
+        return 0;
+    result=wire_recv((int)fd, uid, gid);
+    if(result)
+        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID failed: 0x%08x",
+            (unsigned)result);
+    return result==0;
+}
+#endif /* MSSPI_LINUX */
+
 #ifdef MSSPISSL
 #ifdef NO_OPENSSLOFF
 #else /* NO_OPENSSLOFF */
@@ -816,6 +927,20 @@ NOEXPORT void local_start(CLI *c) {
         return;
     }
 
+#if defined(MSSPI_LINUX) && defined(HAVE_STRUCT_SOCKADDR_UN)
+    if(c->opt->option.for_hsm && !c->is_exec &&
+            c->peer_addr.sa.sa_family==AF_UNIX) {
+        uid_t uid;
+        gid_t gid;
+
+        if(!wire_receive_credentials(c->local_rfd.is_socket ?
+                c->local_rfd.fd : c->local_wfd.fd, &uid, &gid))
+            throw_exception(c, 1);
+        s_log(LOG_DEBUG, "for_hsm: received Unix credentials uid=%ld gid=%ld",
+            (long)uid, (long)gid);
+    }
+#endif
+
     /* authenticate based on retrieved IP address of the client */
     c->accepted_address=s_ntop(&c->peer_addr, c->peer_addr_len);
 #ifdef USE_LIBWRAP
@@ -1212,6 +1337,15 @@ NOEXPORT void ssl_start(CLI *c) {
 
         if( c->opt->option.client )
             msspi_set_client( c->msh, 1 );
+
+#ifdef MSSPI_LINUX
+        if( c->opt->option.for_hsm &&
+                !msspi_set_verify_revocation( c->msh, 0 ) )
+        {
+            s_log( LOG_ERR, "for_hsm: failed to disable revocation checks" );
+            throw_exception( c, 1 );
+        }
+#endif
 
         if( c->opt->cipher_list )
             msspi_set_cipherlist( c->msh, (const uint8_t *)c->opt->cipher_list, strlen( c->opt->cipher_list ) );
@@ -2424,6 +2558,12 @@ NOEXPORT SOCKET connect_remote(CLI *c) {
                 !s_connect(c, &c->connect_addr.addr[c->idx],
                     addr_len(&c->connect_addr.addr[c->idx]),
                     c->opt->timeout_connect)) {
+#if defined(MSSPI_LINUX) && defined(HAVE_STRUCT_SOCKADDR_UN)
+            if(c->opt->option.for_hsm &&
+                    c->connect_addr.addr[c->idx].sa.sa_family==AF_UNIX &&
+                    !wire_send_credentials(c->fd))
+                throw_exception(c, 1);
+#endif
 #ifdef NO_OPENSSLOFF
             if(c->ssl) {
                 SSL_SESSION *sess=SSL_get1_session(c->ssl);

@@ -2051,6 +2051,40 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     }
 
+#ifdef MSSPI_LINUX
+    /* for_hsm */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->option.for_hsm=0;
+        break;
+    case CMD_SET_COPY:
+        section->option.for_hsm=new_service_options.option.for_hsm;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "for_hsm"))
+            break;
+        if(!strcasecmp(arg, "yes"))
+            section->option.for_hsm=1;
+        else if(!strcasecmp(arg, "no"))
+            section->option.for_hsm=0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = no", "for_hsm");
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE,
+            "%-22s = yes|no enable CryptoPro HSM Unix credential handshake",
+            "for_hsm");
+        break;
+    }
+#endif /* MSSPI_LINUX */
+
     /* pin */
     switch( cmd )
     {
