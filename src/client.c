@@ -124,6 +124,90 @@ const char * SSL_get_version_msspi( MSSPI_HANDLE h )
     return (const char *)version_string;
 }
 
+#ifdef MSSPI_LINUX
+#include <semaphore.h>
+#include <errno.h>
+static sem_t msspi_gate;
+static int msspi_gate_on = 0;
+void msspi_gate_init( long parallel )
+{
+    static int done = 0;
+    const char * e;
+    long n = parallel;
+    if( done )
+        return;
+    done = 1;
+    e = getenv( "STUNNEL_CRYPTO_PARALLEL" );
+    if( e && *e )
+    {
+        char * end;
+        long v = strtol( e, &end, 10 );
+        if( end != e && *end == '\0' && v >= 0 )
+            n = v;
+    }
+    if( n > 0 && sem_init( &msspi_gate, 0, ( unsigned )n ) == 0 )
+        msspi_gate_on = 1;
+}
+NOEXPORT void msspi_gate_enter( void )
+{
+    if( msspi_gate_on )
+        while( sem_wait( &msspi_gate ) == -1 && errno == EINTR )
+            ;
+}
+NOEXPORT void msspi_gate_leave( void )
+{
+    if( msspi_gate_on )
+        sem_post( &msspi_gate );
+}
+int msspi_gate_connect( CLI * c )
+{
+    int ret;
+    msspi_gate_enter();
+    ret = msspi_connect( c->msh );
+    msspi_gate_leave();
+    return ret;
+}
+int msspi_gate_accept( CLI * c )
+{
+    int ret;
+    msspi_gate_enter();
+    ret = msspi_accept( c->msh );
+    msspi_gate_leave();
+    return ret;
+}
+int msspi_gate_read( CLI * c, void * buf, int len )
+{
+    int ret;
+    msspi_gate_enter();
+    ret = msspi_read( c->msh, buf, len );
+    msspi_gate_leave();
+    return ret;
+}
+int msspi_gate_write( CLI * c, const void * buf, int len )
+{
+    int ret;
+    msspi_gate_enter();
+    ret = msspi_write( c->msh, buf, len );
+    msspi_gate_leave();
+    return ret;
+}
+int msspi_gate_shutdown( CLI * c )
+{
+    int ret;
+    msspi_gate_enter();
+    ret = msspi_shutdown( c->msh );
+    msspi_gate_leave();
+    return ret;
+}
+void msspi_gate_close( CLI * c )
+{
+    msspi_gate_enter();
+    msspi_close( c->msh );
+    c->msh = NULL;
+    msspi_gate_leave();
+}
+#endif /* MSSPI_LINUX */
+
 int BIO_sock_non_fatal_error( int err )
 {
     switch( err )
@@ -567,9 +651,14 @@ NOEXPORT void client_run(CLI *c) {
 #ifdef MSSPISSL
     if( c->msh )
     {
+#ifdef MSSPI_LINUX
+        msspi_gate_shutdown( c );
+        msspi_gate_close( c );
+#else
         msspi_shutdown( c->msh );
         msspi_close( c->msh );
         c->msh = NULL;
+#endif
     }
 
     if( c->exec_fd != INVALID_SOCKET )
