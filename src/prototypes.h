@@ -211,6 +211,9 @@ struct global_options_struct {
     char *egd_sock;                       /* entropy gathering daemon socket */
     char *rand_file;                                /* file with random data */
     long random_bytes;                      /* how many random bytes to read */
+#ifdef MSSPI_LINUX
+    int crypto_parallel;
+#endif
 
         /* some global data for stunnel.c */
 #ifndef USE_WIN32
@@ -415,6 +418,9 @@ struct service_options_struct {
     struct {
 #ifdef MSSPISSL
         unsigned msspi:1;               /* use msspi */
+#ifdef MSSPI_LINUX
+        unsigned for_hsm:1;             /* CryptoPro HSM Unix credential handshake */
+#endif
         unsigned silent:1;
         unsigned selftest:1;
 #endif
@@ -1034,6 +1040,33 @@ ICON_IMAGE load_icon_file(const char *);
 #endif
 
 #ifdef MSSPISSL
+#ifdef MSSPI_LINUX
+void msspi_gate_init( long );
+int msspi_gate_connect( CLI * );
+int msspi_gate_accept( CLI * );
+int msspi_gate_read( CLI *, void *, int );
+int msspi_gate_write( CLI *, const void *, int );
+int msspi_gate_shutdown( CLI * );
+void msspi_gate_close( CLI * );
+
+#undef SSL_connect
+#define SSL_connect( s ) msspi_gate_connect( c )
+
+#undef SSL_accept
+#define SSL_accept( s ) msspi_gate_accept( c )
+
+#undef SSL_write
+#define SSL_write( s, b, n ) msspi_gate_write( c, b, n )
+
+#undef SSL_read
+#define SSL_read( s, b, n ) msspi_gate_read( c, b, n )
+
+#undef SSL_shutdown
+#define SSL_shutdown( s ) msspi_gate_shutdown( c )
+
+#undef SSL_set_shutdown
+#define SSL_set_shutdown( s, m ) { if( (m) & SSL_SENT_SHUTDOWN ) msspi_gate_shutdown( c ); }
+#else
 #undef SSL_connect
 #define SSL_connect( s ) msspi_connect( c->msh )
 
@@ -1054,6 +1087,7 @@ ICON_IMAGE load_icon_file(const char *);
 
 #undef SSL_set_shutdown
 #define SSL_set_shutdown( s, m ) { if( (m) & SSL_SENT_SHUTDOWN ) msspi_shutdown( c->msh ); }
+#endif /* MSSPI_LINUX */
 
 int SSL_get_shutdown_msspi( MSSPI_HANDLE h );
 #undef SSL_get_shutdown

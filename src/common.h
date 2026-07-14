@@ -43,6 +43,10 @@
 #define USE_OS_THREADS
 typedef void CRYPTO_RWLOCK;
 
+#if defined(MSSPISSL) && defined(__linux__)
+#define MSSPI_LINUX
+#endif
+
 #include "version.h"
 
 /**************************************** common constants */
