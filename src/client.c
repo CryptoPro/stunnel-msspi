@@ -39,29 +39,19 @@
 #include "prototypes.h"
 
 #ifdef MSSPI_LINUX
-#include <dlfcn.h>
 #include <stdint.h>
 
-#if defined(__mips__)
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define CPRO_LIBDIR "/opt/cprocsp/lib/mipsel/"
-#else
-#define CPRO_LIBDIR "/opt/cprocsp/lib/mips/"
-#endif
-#elif defined(__arm__)
-#define CPRO_LIBDIR "/opt/cprocsp/lib/arm/"
-#elif defined(__aarch64__)
-#define CPRO_LIBDIR "/opt/cprocsp/lib/aarch64/"
-#elif defined(__e2k__) || defined(__PPC64__)
-#define CPRO_LIBDIR "/opt/cprocsp/lib/lib64/"
-#elif defined(__i386__)
-#define CPRO_LIBDIR "/opt/cprocsp/lib/ia32/"
-#else
-#define CPRO_LIBDIR "/opt/cprocsp/lib/amd64/"
-#endif
-
 #define LIBCSPR_NAME "libcspr.so"
-#define LIBCSPR_PATH CPRO_LIBDIR LIBCSPR_NAME
+#define SUP_LOAD_LIBRARY_DEFAULT 1
+#define SUP_LOAD_LIBRARY_SEPARATE 2
+#define SUP_LOAD_LIBRARY_LAZY 4
+
+typedef void *TSupModuleInstance;
+typedef void *TSupProc;
+
+TSupModuleInstance support_load_library_registry(const char *, int);
+TSupProc support_load_library_getaddr(TSupModuleInstance, const char *);
+void support_unload_library_registry(TSupModuleInstance);
 
 typedef uint32_t (*WIRE_SEND)(int);
 typedef uint32_t (*WIRE_RECV)(int, uid_t *, gid_t *);
@@ -71,34 +61,30 @@ static WIRE_RECV wire_recv;
 static int wire_loaded;
 
 NOEXPORT void wire_load(void) {
-    void *lib;
-    const char *error;
+    TSupModuleInstance lib;
 
-    lib=dlopen(LIBCSPR_PATH, RTLD_LAZY | RTLD_LOCAL);
-    if(!lib)
-        lib=dlopen(LIBCSPR_NAME, RTLD_LAZY | RTLD_LOCAL);
+    lib=support_load_library_registry(LIBCSPR_NAME,
+        SUP_LOAD_LIBRARY_DEFAULT | SUP_LOAD_LIBRARY_SEPARATE |
+        SUP_LOAD_LIBRARY_LAZY);
     if(!lib) {
-        error=dlerror();
-        s_log(LOG_ERR, "for_hsm: unable to load %s: %s",
-            LIBCSPR_NAME, error ? error : "unknown error");
+        s_log(LOG_ERR, "for_hsm: unable to load %s", LIBCSPR_NAME);
         return;
     }
 
-    dlerror();
-    *(void **)&wire_send=dlsym(lib, "WireSendFDnEUID");
-    error=dlerror();
-    if(error || !wire_send) {
-        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID is unavailable: %s",
-            error ? error : "symbol not found");
+    *(void **)&wire_send=
+        support_load_library_getaddr(lib, "WireSendFDnEUID");
+    if(!wire_send) {
+        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID is unavailable");
+        support_unload_library_registry(lib);
         return;
     }
 
-    dlerror();
-    *(void **)&wire_recv=dlsym(lib, "WireRecvFDnEUID");
-    error=dlerror();
-    if(error || !wire_recv) {
-        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID is unavailable: %s",
-            error ? error : "symbol not found");
+    *(void **)&wire_recv=
+        support_load_library_getaddr(lib, "WireRecvFDnEUID");
+    if(!wire_recv) {
+        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID is unavailable");
+        wire_send=NULL;
+        support_unload_library_registry(lib);
         return;
     }
 
