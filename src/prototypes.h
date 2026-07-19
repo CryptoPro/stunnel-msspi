@@ -541,6 +541,10 @@ typedef enum {
     RENEG_DETECTED /* renegotiation detected */
 } RENEG_STATE;
 
+#ifdef MSSPISSL
+extern int msspi_cert_cb_supported;
+#endif
+
 struct client_data_struct {
 #ifdef MSSPISSL
     MSSPI_HANDLE msh;
