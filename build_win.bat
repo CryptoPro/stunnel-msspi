@@ -17,8 +17,9 @@ if not exist %OPENSSL_INCLUDE%\ms mkdir %OPENSSL_INCLUDE%\ms
 curl -fsSL -o %OPENSSL_INCLUDE%\ms\applink.c https://raw.githubusercontent.com/deemru/openssl/%OPENSSL_VERSION%/ms/applink.c || exit /b 1
 
 set INCLUDES=/I%OPENSSL_INCLUDE% /I./src/msspi/third_party/cprocsp/include
-set CFLAGS_CPP=/c /Ox /Os /GL /GF /GS- /Wall /EHa /DMSSPI_USE_MSSPI_CERT %INCLUDES%
-set CFLAGS_C=/c /Ox /Os /GL /GF /GS- /W4 /DUSE_MSSPI /DMSSPI_USE_MSSPI_CERT %INCLUDES%
+set WINDOWS_TARGET=/DWINVER=0x0600 /D_WIN32_WINNT=0x0600
+set CFLAGS_CPP=/c /Ox /Os /GL /GF /GS- /Wall /EHa %WINDOWS_TARGET% /DMSSPI_USE_MSSPI_CERT %INCLUDES%
+set CFLAGS_C=/c /Ox /Os /GL /GF /GS- /W4 %WINDOWS_TARGET% /DUSE_MSSPI /DMSSPI_USE_MSSPI_CERT %INCLUDES%
 set LIBS=crypt32.lib advapi32.lib ws2_32.lib shell32.lib user32.lib gdi32.lib comdlg32.lib
 
 set SRC_CPP=src/msspi/src/msspi.cpp
@@ -51,7 +52,7 @@ pushd src
 rc -r resources.rc || exit /b 1
 popd
 
-link /LTCG %OBJS% %LIBS% ./src/resources.res /subsystem:windows /OUT:stunnel-msspi.exe || exit /b 1
+link /LTCG %OBJS% %LIBS% ./src/resources.res /subsystem:windows,6.00 /OUT:stunnel-msspi.exe || exit /b 1
 
 if defined BUILD_TAG (
     7z a %BUILD_TAG%-386-windows.zip stunnel-msspi.exe || exit /b 1
@@ -76,7 +77,7 @@ pushd src
 rc -r resources.rc || exit /b 1
 popd
 
-link /LTCG %OBJS% %LIBS% ./src/resources.res /subsystem:windows /OUT:stunnel-msspi.exe || exit /b 1
+link /LTCG %OBJS% %LIBS% ./src/resources.res /subsystem:windows,6.00 /OUT:stunnel-msspi.exe || exit /b 1
 
 if defined BUILD_TAG (
     7z a %BUILD_TAG%-amd64-windows.zip stunnel-msspi.exe || exit /b 1
