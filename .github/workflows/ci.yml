@@ -81,7 +81,7 @@ jobs:
         files: src/${{ steps.build.outputs.VERSION }}.tar.gz
 
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     name: CI (windows)
     steps:
     - uses: actions/checkout@v4

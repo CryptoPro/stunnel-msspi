@@ -38,7 +38,7 @@ echo.
 echo ========== Building x86 ==========
 echo.
 
-call "%VCVARSALL%" x86 || exit /b 1
+call "%VCVARSALL%" x86 -vcvars_ver=14.29 || exit /b 1
 
 7z x bin32.zip -aoa
 copy /y bin32\opensslconf.h %OPENSSL_INCLUDE%\openssl\opensslconf.h >nul
@@ -63,7 +63,7 @@ echo.
 echo ========== Building x64 ==========
 echo.
 
-call "%VCVARSALL%" x64 || exit /b 1
+call "%VCVARSALL%" x64 -vcvars_ver=14.29 || exit /b 1
 
 7z x bin64.zip -aoa
 copy /y bin64\opensslconf.h %OPENSSL_INCLUDE%\openssl\opensslconf.h >nul
