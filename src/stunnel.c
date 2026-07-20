@@ -102,20 +102,12 @@ int num_clients=-1;
 s_poll_set *fds; /* file descriptors of listening sockets */
 int systemd_fds; /* number of file descriptors passed by systemd */
 int listen_fds_start; /* base for systemd-provided file descriptors */
-#ifdef MSSPISSL
-int msspi_cert_cb_supported=1;
-#endif
-
 /**************************************** startup */
 
 /* this has to be the first function called from ui_*.c */
 int stunnel_init(void) { /* basic initialization */
 #ifdef USE_WIN32
     static struct WSAData wsa_state;
-#ifdef MSSPISSL
-    DWORD version;
-    int major, minor;
-#endif
 #endif
 
     tls_init(); /* initialize thread-local storage */
@@ -124,15 +116,6 @@ int stunnel_init(void) { /* basic initialization */
     crypto_init(); /* initialize libcrypto */
 #endif /* NO_OPENSSLOFF */
 #ifdef USE_WIN32
-#ifdef MSSPISSL
-#ifdef _MSC_VER
-#pragma warning(disable: 4996)
-#endif
-    version=GetVersion();
-    major=LOBYTE(LOWORD(version));
-    minor=HIBYTE(LOWORD(version));
-    msspi_cert_cb_supported=major>6 || (major==6 && minor>=2);
-#endif
     if(WSAStartup(MAKEWORD(2, 2), &wsa_state))
         return 1; /* error */
 #endif

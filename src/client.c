@@ -1336,13 +1336,8 @@ NOEXPORT void ssl_start(CLI *c) {
         if( c->opt->cipher_list )
             msspi_set_cipherlist( c->msh, (const uint8_t *)c->opt->cipher_list, strlen( c->opt->cipher_list ) );
 
-        if( c->opt->option.client ) {
-            if( msspi_cert_cb_supported ||
-                    !( c->opt->option.verify_chain || c->opt->option.verify_peer ) )
-                msspi_set_cert_cb( c->msh, stunnel_msspi_cert_cb );
-            else if( !msspi_load_own_certs( c ) )
-                throw_exception( c, 1 );
-        }
+        if( c->opt->option.client )
+            msspi_set_cert_cb( c->msh, stunnel_msspi_cert_cb );
         else if( !msspi_load_own_certs( c ) )
             throw_exception( c, 1 );
     }
