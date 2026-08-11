@@ -1093,8 +1093,8 @@ NOEXPORT int msspi_load_own_certs(CLI *c) {
                 c->opt->option.silent, (const uint8_t *)pin, pin ? strlen(pin) : 0,
                 c->opt->option.selftest)) {
             s_log(LOG_ERR,
-                "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin = \"%s\", silent = \"%s\", selftest = \"%s\")",
-                cert, pin ? pin : "", c->opt->option.silent ? "yes" : "no",
+                "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin configured = \"%s\", silent = \"%s\", selftest = \"%s\")",
+                cert, pin ? "yes" : "no", c->opt->option.silent ? "yes" : "no",
                 c->opt->option.selftest ? "yes" : "no");
             return 0;
         }

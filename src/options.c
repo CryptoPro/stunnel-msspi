@@ -565,8 +565,7 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
 
         config_arg=strchr(config_line, '=');
         if(!config_arg) {
-            s_log(LOG_ERR, "%s:%d: \"%s\": No '=' found",
-                path, line_number, line_text);
+            s_log(LOG_ERR, "%s:%d: No '=' found", path, line_number);
             file_close(df);
             return 1;
         }
@@ -583,8 +582,8 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
         if(errstr==option_not_found)
             errstr=parse_service_option(CMD_SET_VALUE, section_ptr, config_opt, config_arg);
         if(errstr) {
-            s_log(LOG_ERR, "%s:%d: \"%s\": %s",
-                path, line_number, line_text, errstr);
+            s_log(LOG_ERR, "%s:%d: Option \"%s\": %s",
+                path, line_number, config_opt, errstr);
             file_close(df);
             return 1;
         }
