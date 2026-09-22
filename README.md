@@ -8,7 +8,7 @@ provider's store and a service names one by its thumbprint.
 * Binaries: the Releases page - Linux amd64, one executable in the tarball.
 * One branch per upstream release, named `stunnel-<version>-msspi`. The
   default branch is the current one; the older ones stay where they were.
-* Releases are tagged on that branch, as in `stunnel-5.82-msspi-0.84`.
+* Releases are tagged on that branch: `stunnel-<version>-msspi-<increment>`.
 * The options this fork adds are described in `doc/stunnel.md`, beside the
   upstream ones.
 
