@@ -7,8 +7,8 @@
 
 common_headers = common.h prototypes.h version.h
 common_sources = tls.c str.c file.c client.c log.c options.c protocol.c
-common_sources += network.c resolver.c ssl.c ctx.c verify.c sthreads.c
-common_sources += ocsp.c fd.c dhparam.c cron.c stunnel.c
+common_sources += network.c resolver.c sthreads.c
+common_sources += fd.c stunnel.c force_enable_cxx.cpp
 unix_sources = pty.c libwrap.c ui_unix.c
 shared_sources = env.c
 win32_gui_sources = ui_win_gui.c resources.h resources.rc
@@ -26,6 +26,9 @@ bin_SCRIPTS = stunnel3
 EXTRA_DIST = stunnel3.in
 CLEANFILES = stunnel3
 
+# Workaround for fix c++ linkage
+stunnel_CXXFLAGS = $(CFLAGS)
+
 # Red Hat "by design" bug #82369
 stunnel_CPPFLAGS = -I$(SYSROOT)/usr/kerberos/include
 
@@ -35,7 +38,7 @@ stunnel_CPPFLAGS += -DLIBDIR='"$(pkglibdir)"'
 stunnel_CPPFLAGS += -DCONFDIR='"$(sysconfdir)/stunnel"'
 
 # TLS library
-stunnel_LDFLAGS = -L$(SSLDIR)/lib64 -L$(SSLDIR)/lib -lssl -lcrypto
+stunnel_LDFLAGS = -L$(SSLDIR)/lib64 -L$(SSLDIR)/lib
 
 # Apply substitutions
 edit = sed \
@@ -50,6 +53,10 @@ os2.mak: $(srcdir)/os2.mak.in
 pkglib_LTLIBRARIES = libstunnel.la
 libstunnel_la_SOURCES = $(shared_sources)
 libstunnel_la_LDFLAGS = -avoid-version
+
+# Force enable c++ linkage
+force_enable_cxx.cpp:
+	touch force_enable_cxx.cpp
 
 ###############################################################################
 # Win32 executables                                                           #

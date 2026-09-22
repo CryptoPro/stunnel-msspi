@@ -655,8 +655,8 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
 
         config_arg=strchr(config_line, '=');
         if(!config_arg) {
-            s_log(LOG_ERR, "%s:%d: \"%s\": No '=' found",
-                entry->path, entry->line_number, line_text);
+            s_log(LOG_ERR, "%s:%d: No '=' found",
+                entry->path, entry->line_number);
             goto fail;
         }
         *config_arg++='\0'; /* split into option name and argument value */
@@ -674,8 +674,8 @@ NOEXPORT int options_file(char *path, CONF_TYPE type,
         if(errstr==option_include)
             errstr=include_config(entry, config_arg);
         if(errstr) {
-            s_log(LOG_ERR, "%s:%d: \"%s\": %s",
-                entry->path, entry->line_number, line_text, errstr);
+            s_log(LOG_ERR, "%s:%d: Option \"%s\": %s",
+                entry->path, entry->line_number, config_opt, errstr);
             goto fail;
         }
     }
@@ -1492,6 +1492,40 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
         break;
     }
 
+#ifdef MSSPI_LINUX
+    /* cryptoParallel */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        options->crypto_parallel=0;
+        break;
+    case CMD_SET_COPY: /* not used for global options */
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "cryptoParallel"))
+            break;
+        {
+            char *tmp_str;
+            long v=strtol(arg, &tmp_str, 10);
+            if(tmp_str==arg || *tmp_str || v<0)
+                return "cryptoParallel must be 0 (off) or a positive integer";
+            options->crypto_parallel=(int)v;
+        }
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        msspi_gate_init(options->crypto_parallel);
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = 0", "cryptoParallel");
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = max concurrent CryptoPro CSP operations, 0=off",
+            "cryptoParallel");
+        break;
+    }
+#endif /* MSSPI_LINUX */
+
     /* RNDfile */
     switch(cmd) {
     case CMD_SET_DEFAULTS:
@@ -1688,9 +1722,6 @@ NOEXPORT const char *parse_global_option(CMD cmd, GLOBAL_OPTIONS *options, char 
     case CMD_SET_VALUE:
         return option_not_found;
     case CMD_INITIALIZE:
-        /* FIPS needs to be initialized as early as possible */
-        if(ssl_configure(options)) /* configure global TLS settings */
-            return "Failed to initialize TLS";
     case CMD_PRINT_DEFAULTS:
         break;
     case CMD_PRINT_HELP:
@@ -1982,12 +2013,9 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "checkEmail"))
             break;
-        if(section->option.default_check_email) {
-            name_list_free(&section->check_email);
-            section->option.default_check_email=0;
-        }
-        name_list_append(&section->check_email, arg);
-        return NULL; /* OK */
+        /* the provider checks a name it is given, and this is not one it
+           takes; accepting the option would promise a check nobody makes */
+        return "Not supported: the provider only checks host names";
     case CMD_INITIALIZE:
         if(section->check_email && !section->option.verify_chain && !section->option.verify_peer)
             return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
@@ -1995,7 +2023,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_PRINT_DEFAULTS:
         break;
     case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = peer certificate email address",
+        s_log(LOG_NOTICE, "%-22s = not supported in this build",
             "checkEmail");
         break;
     }
@@ -2050,12 +2078,9 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_SET_VALUE:
         if(strcasecmp(opt, "checkIP"))
             break;
-        if(section->option.default_check_ip) {
-            name_list_free(&section->check_ip);
-            section->option.default_check_ip=0;
-        }
-        name_list_append(&section->check_ip, arg);
-        return NULL; /* OK */
+        /* the provider checks a name it is given, and this is not one it
+           takes; accepting the option would promise a check nobody makes */
+        return "Not supported: the provider only checks host names";
     case CMD_INITIALIZE:
         if(section->check_ip && !section->option.verify_chain && !section->option.verify_peer)
             return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
@@ -2063,7 +2088,7 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_PRINT_DEFAULTS:
         break;
     case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = peer certificate IP address",
+        s_log(LOG_NOTICE, "%-22s = not supported in this build",
             "checkIP");
         break;
     }
@@ -2088,16 +2113,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         section->cipher_list=str_dup_detached(arg);
         return NULL; /* OK */
     case CMD_INITIALIZE:
-        if(!section->cipher_list) {
-            /* this is only executed for global options, because
-             * section->cipher_list is no longer NULL in sections */
-#ifdef USE_FIPS
-            if(new_global_options.option.fips)
-                section->cipher_list=str_dup_detached(fips_cipher_list);
-            else
-#endif /* USE_FIPS */
-                section->cipher_list=str_dup_detached(stunnel_cipher_list);
-        }
         break;
     case CMD_PRINT_DEFAULTS:
 #ifdef USE_FIPS
@@ -2150,6 +2165,361 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     }
 #endif /* TLS 1.3 */
+
+#ifdef MSSPI_LINUX
+    /* for_hsm */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->option.for_hsm=0;
+        break;
+    case CMD_SET_COPY:
+        section->option.for_hsm=new_service_options.option.for_hsm;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "for_hsm"))
+            break;
+        if(!strcasecmp(arg, "yes"))
+            section->option.for_hsm=1;
+        else if(!strcasecmp(arg, "no"))
+            section->option.for_hsm=0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = no", "for_hsm");
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE,
+            "%-22s = yes|no enable CryptoPro HSM Unix credential handshake",
+            "for_hsm");
+        break;
+    }
+#endif /* MSSPI_LINUX */
+
+    /* pin */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->pin = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "pin" ) &&
+                strcasecmp( opt, "pincode" ) )
+                break;
+            if( arg[0] )
+                section->pin = str_dup_detached( arg );
+            else
+                return "The pin is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->pin = str_dup_detached( new_service_options.pin );
+            break;
+        case CMD_FREE:
+            str_free( section->pin );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = pin", "pin" );
+            break;
+    }
+
+    /* pin2 */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->pin2 = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "pin2" ) )
+                break;
+            if( arg[0] )
+                section->pin2 = str_dup_detached( arg );
+            else
+                return "The pin2 is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->pin2 = str_dup_detached( new_service_options.pin2 );
+            break;
+        case CMD_FREE:
+            str_free( section->pin2 );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = pin2", "pin2" );
+            break;
+    }
+
+    /* cert2 */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->cert2 = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "cert2" ) )
+                break;
+            if( arg[0] )
+                section->cert2 = str_dup_detached( arg );
+            else
+                return "The cert is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            section->cert2 = str_dup_detached( new_service_options.cert2 );
+            break;
+        case CMD_FREE:
+            str_free( section->cert2 );
+            break;
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = cert2", "cert2" );
+            break;
+    }
+
+    /* DTLSmtu */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->dtls_mtu = 1300; /* under what a tunnelled path carries */
+            break;
+        case CMD_SET_COPY:
+            section->dtls_mtu = new_service_options.dtls_mtu;
+            break;
+        case CMD_FREE:
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "DTLSmtu" ) )
+                break;
+            {
+                char *tmp_str;
+                long tmp_long = strtol( arg, &tmp_str, 10 );
+
+                if( tmp_str == arg || *tmp_str )
+                    return "Illegal DTLS MTU";
+                if( tmp_long < 256 || tmp_long > 16384 )
+                    return "The DTLS MTU has to be between 256 and 16384";
+                section->dtls_mtu = (size_t)tmp_long;
+            }
+            return NULL; /* OK */
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            s_log( LOG_NOTICE, "%-22s = 1300", "DTLSmtu" );
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = link MTU the handshake keeps its datagrams"
+                " within, IP and UDP included. Data is not bounded by it:"
+                " a datagram travels in one record, up to 16384 bytes", "DTLSmtu" );
+            break;
+    }
+
+    /* verifyRevocation */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->verify_revocation = REVOCATION_AUTO;
+            break;
+        case CMD_SET_COPY:
+            section->verify_revocation = new_service_options.verify_revocation;
+            break;
+        case CMD_FREE:
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "verifyRevocation" ) )
+                break;
+            if( !strcasecmp( arg, "full" ) )
+                section->verify_revocation = REVOCATION_FULL;
+            else if( !strcasecmp( arg, "auto" ) )
+                section->verify_revocation = REVOCATION_AUTO;
+            else if( !strcasecmp( arg, "no" ) )
+                section->verify_revocation = REVOCATION_NO;
+            else
+                return "Only \"full\", \"auto\" or \"no\" is allowed";
+            return NULL; /* OK */
+        case CMD_INITIALIZE:
+            break;
+        case CMD_PRINT_DEFAULTS:
+            s_log( LOG_NOTICE, "%-22s = auto", "verifyRevocation" );
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = full|auto|no revocation checking;"
+                " auto accepts a certificate with no CRL or OCSP to check",
+                "verifyRevocation" );
+            break;
+    }
+
+    /* the certificate bodies, read once instead of once per session */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+        case CMD_SET_COPY:
+            section->certdata = NULL;
+            section->certdata_len = 0;
+            section->certdata2 = NULL;
+            section->certdata2_len = 0;
+            break;
+        case CMD_SET_VALUE:
+            break;
+        case CMD_FREE:
+            str_free( section->certdata );
+            str_free( section->certdata2 );
+            break;
+        case CMD_INITIALIZE:
+            if( section->cert && section->cert->name )
+                section->certdata = msspi_read_cert_file( section->cert->name,
+                    &section->certdata_len );
+            if( section->cert2 )
+                section->certdata2 = msspi_read_cert_file( section->cert2,
+                    &section->certdata2_len );
+            break;
+        case CMD_PRINT_DEFAULTS:
+        case CMD_PRINT_HELP:
+            break;
+    }
+
+    /* checkSubject */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->checkSubject = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "checkSubject" ) )
+                break;
+            if( arg[0] )
+                name_list_append( &section->checkSubject, arg );
+            else
+                return "checkSubject is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            name_list_dup( &section->checkSubject, new_service_options.checkSubject );
+            break;
+        case CMD_FREE:
+            name_list_free( &section->checkSubject );
+            break;
+        case CMD_INITIALIZE:
+            if( section->checkSubject && !section->option.verify_chain && !section->option.verify_peer )
+                return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = checkSubject", "checkSubject" );
+            break;
+    }
+
+    /* checkIssuer */
+    switch( cmd )
+    {
+        case CMD_SET_DEFAULTS:
+            section->checkIssuer = NULL;
+            break;
+        case CMD_SET_VALUE:
+            if( strcasecmp( opt, "checkIssuer" ) )
+                break;
+            if( arg[0] )
+                name_list_append( &section->checkIssuer, arg );
+            else
+                return "checkIssuer is empty";
+            return NULL; /* OK */
+        case CMD_SET_COPY:
+            name_list_dup( &section->checkIssuer, new_service_options.checkIssuer );
+            break;
+        case CMD_FREE:
+            name_list_free( &section->checkIssuer );
+            break;
+        case CMD_INITIALIZE:
+            if( section->checkIssuer && !section->option.verify_chain && !section->option.verify_peer )
+                return "Either \"verifyChain\" or \"verifyPeer\" has to be enabled";
+            break;
+        case CMD_PRINT_DEFAULTS:
+            break;
+        case CMD_PRINT_HELP:
+            s_log( LOG_NOTICE, "%-22s = checkIssuer", "checkIssuer" );
+            break;
+    }
+
+    /* selftest */
+    switch (cmd)
+    {
+    case CMD_SET_DEFAULTS:
+        section->option.selftest = 1;
+        break;
+    case CMD_SET_COPY:
+        section->option.selftest = new_service_options.option.selftest;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if (strcasecmp(opt, "selftest"))
+            break;
+        if (!strcasecmp(arg, "yes"))
+            section->option.selftest = 1;
+        else if (!strcasecmp(arg, "no"))
+            section->option.selftest = 0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = yes|no selftest before connect",
+            "selftest");
+        break;
+    }
+
+    /* silent */
+    switch (cmd)
+    {
+    case CMD_SET_DEFAULTS:
+        section->option.silent = 1;
+        break;
+    case CMD_SET_COPY:
+        section->option.silent = new_service_options.option.silent;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if (strcasecmp(opt, "silent"))
+            break;
+        if (!strcasecmp(arg, "yes"))
+            section->option.silent = 1;
+        else if (!strcasecmp(arg, "no"))
+            section->option.silent = 0;
+        else
+            return "The argument needs to be either 'yes' or 'no'";
+#ifndef USE_WIN32
+        if (!new_global_options.option.foreground && !section->option.silent)
+            return "To use this option please add global option 'foreground = yes' or 'foreground = quiet'";
+#endif
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        break;
+    case CMD_PRINT_HELP:
+#ifndef USE_WIN32
+        s_log(LOG_NOTICE, "%-22s = yes|no silent mode (for foreground mode only)",
+#else
+        s_log(LOG_NOTICE, "%-22s = yes|no silent mode",
+#endif
+            "silent");
+        break;
+    }
 
     /* client */
     switch(cmd) {
@@ -3974,40 +4344,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 
 #else /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
-    /* sslVersion */
-    switch(cmd) {
-    case CMD_SET_DEFAULTS:
-        tls_methods_set(section, NULL);
-        break;
-    case CMD_SET_COPY:
-        section->client_method=new_service_options.client_method;
-        section->server_method=new_service_options.server_method;
-        break;
-    case CMD_FREE:
-        break;
-    case CMD_SET_VALUE:
-        if(strcasecmp(opt, "sslVersion"))
-            break;
-        return tls_methods_set(section, arg);
-    case CMD_INITIALIZE:
-        {
-            char *tmp_str=tls_methods_check(section);
-            if(tmp_str)
-                return tmp_str;
-        }
-        break;
-    case CMD_PRINT_DEFAULTS:
-        break;
-    case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = all"
-            "|SSLv2|SSLv3|TLSv1"
-#if OPENSSL_VERSION_NUMBER>=0x10001000L
-            "|TLSv1.1|TLSv1.2"
-#endif /* OPENSSL_VERSION_NUMBER>=0x10001000L */
-            " TLS method", "sslVersion");
-        break;
-    }
-
 #endif /* OPENSSL_VERSION_NUMBER<0x10100000L */
 
 #ifndef USE_FORK
@@ -4047,80 +4383,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
 #endif
 
 #if OPENSSL_VERSION_NUMBER>=0x10000000L
-
-    /* ticketKeySecret */
-    switch(cmd) {
-    case CMD_SET_DEFAULTS:
-        section->ticket_key=NULL;
-        break;
-    case CMD_SET_COPY:
-        section->ticket_key=key_dup(new_service_options.ticket_key);
-        break;
-    case CMD_FREE:
-        key_free(section->ticket_key);
-        break;
-    case CMD_SET_VALUE:
-        if(strcasecmp(opt, "ticketKeySecret"))
-            break;
-        section->ticket_key=key_read(arg, "ticketKeySecret");
-        if(!section->ticket_key)
-            return "Failed to read ticketKeySecret";
-        return NULL; /* OK */
-    case CMD_INITIALIZE:
-        if(!section->ticket_key)          /* ticketKeySecret not configured */
-            break;
-        if(section->option.client){
-            s_log(LOG_NOTICE,
-                    "ticketKeySecret is ignored in the client mode");
-            break;
-        }
-        if(!section->ticket_mac)
-            return "\"ticketKeySecret\" and \"ticketMacSecret\" must be set together";
-        break;
-    case CMD_PRINT_DEFAULTS:
-        break;
-    case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = secret key for encryption/decryption TLSv1.3 tickets",
-            "ticketKeySecret");
-        break;
-    }
-
-    /* ticketMacSecret */
-    switch(cmd) {
-    case CMD_SET_DEFAULTS:
-        section->ticket_mac=NULL;
-        break;
-    case CMD_SET_COPY:
-        section->ticket_mac=key_dup(new_service_options.ticket_mac);
-        break;
-    case CMD_FREE:
-        key_free(section->ticket_mac);
-        break;
-    case CMD_SET_VALUE:
-        if(strcasecmp(opt, "ticketMacSecret"))
-            break;
-        section->ticket_mac=key_read(arg, "ticketMacSecret");
-        if(!section->ticket_mac)
-            return "Failed to read ticketMacSecret";
-        return NULL; /* OK */
-    case CMD_INITIALIZE:
-        if(!section->ticket_mac)            /* ticketMacSecret not configured */
-            break;
-        if(section->option.client){
-            s_log(LOG_NOTICE,
-                    "ticketMacSecret is ignored in the client mode");
-            break;
-        }
-        if(!section->ticket_key)
-            return "\"ticketKeySecret\" and \"ticketMacSecret\" must be set together";
-        break;
-    case CMD_PRINT_DEFAULTS:
-        break;
-    case CMD_PRINT_HELP:
-        s_log(LOG_NOTICE, "%-22s = key for HMAC operations on TLSv1.3 tickets",
-            "ticketMacSecret");
-        break;
-    }
 
 #endif /* OpenSSL 1.0.0 or later */
 
@@ -4212,6 +4474,72 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         break;
     case CMD_PRINT_HELP:
         s_log(LOG_NOTICE, "%-22s = seconds to connect remote host", "TIMEOUTconnect");
+        break;
+    }
+
+    /* TIMEOUTcookie */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->timeout_cookie=5;
+        break;
+    case CMD_SET_COPY:
+        section->timeout_cookie=new_service_options.timeout_cookie;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "TIMEOUTcookie"))
+            break;
+        {
+            char *tmp_str;
+            section->timeout_cookie=(int)strtol(arg, &tmp_str, 10);
+            if(tmp_str==arg || *tmp_str) /* not a number */
+                return "Illegal cookie timeout";
+            if(section->timeout_cookie<0)
+                return "The cookie timeout has to be zero or more";
+        }
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = %d seconds", "TIMEOUTcookie", 5);
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = seconds a DTLS peer may hold a session"
+            " before it answers the cookie, 0 to use TIMEOUTbusy", "TIMEOUTcookie");
+        break;
+    }
+
+    /* TIMEOUThandshake */
+    switch(cmd) {
+    case CMD_SET_DEFAULTS:
+        section->timeout_handshake=60;
+        break;
+    case CMD_SET_COPY:
+        section->timeout_handshake=new_service_options.timeout_handshake;
+        break;
+    case CMD_FREE:
+        break;
+    case CMD_SET_VALUE:
+        if(strcasecmp(opt, "TIMEOUThandshake"))
+            break;
+        {
+            char *tmp_str;
+            section->timeout_handshake=(int)strtol(arg, &tmp_str, 10);
+            if(tmp_str==arg || *tmp_str) /* not a number */
+                return "Illegal handshake timeout";
+            if(section->timeout_handshake<0)
+                return "The handshake timeout has to be zero or more";
+        }
+        return NULL; /* OK */
+    case CMD_INITIALIZE:
+        break;
+    case CMD_PRINT_DEFAULTS:
+        s_log(LOG_NOTICE, "%-22s = %d seconds", "TIMEOUThandshake", 60);
+        break;
+    case CMD_PRINT_HELP:
+        s_log(LOG_NOTICE, "%-22s = seconds a handshake may take,"
+            " 0 to use TIMEOUTbusy", "TIMEOUThandshake");
         break;
     }
 
@@ -4347,27 +4675,8 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
         }
         return NULL; /* OK */
     case CMD_INITIALIZE:
-#ifndef OPENSSL_NO_ENGINE
-        if((section->option.verify_chain || section->option.verify_peer) &&
-                !section->ca_engine && !section->ca_file && !section->ca_dir
-#if OPENSSL_VERSION_NUMBER>=0x30000000L
-                && !section->ca_store)
-            return "Either \"CAengine\", \"CAfile\", \"CApath\" or \"CAstore\" has to be configured";
-#else /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-                )
-            return "Either \"CAengine\", \"CAfile\" or \"CApath\" has to be configured";
-#endif /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-#else /* OPENSSL_NO_ENGINE */
-        if((section->option.verify_chain || section->option.verify_peer) &&
-                !section->ca_file && !section->ca_dir
-#if OPENSSL_VERSION_NUMBER>=0x30000000L
-                 && !section->ca_store)
-            return "Either \"CAfile\", \"CApath\" or \"CAstore\" has to be configured";
-#else /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-                )
-            return "Either \"CAfile\" or \"CApath\" has to be configured";
-#endif /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-#endif /* OPENSSL_NO_ENGINE */
+        if( section->option.verify_peer && !section->ca_dir )
+            return "\"CApath\" has to be configured";
         break;
     case CMD_PRINT_DEFAULTS:
         s_log(LOG_NOTICE, "%-22s = none", "verify");
@@ -4490,7 +4799,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
     case CMD_SET_COPY:
         break;
     case CMD_FREE:
-        context_cleanup(section);
         str_free(section->servname);
         if(section==&service_options || section==&new_service_options)
             (void)memset(section, 0, sizeof(SERVICE_OPTIONS));
@@ -4515,19 +4823,6 @@ NOEXPORT const char *parse_service_option(CMD cmd, SERVICE_OPTIONS **section_ptr
             if(endpoints!=1)
                 return "Inetd mode must define one endpoint";
         }
-#ifdef SSL_OP_NO_TICKET
-        /* disable RFC4507 support introduced in OpenSSL 0.9.8f */
-        /* OpenSSL 1.1.1 is required to serialize application data
-         * into session tickets */
-        /* server mode sections need it for the "redirect" option
-         * and connect address session persistence */
-        if(OpenSSL_version_num()<0x10101000UL &&
-                !section->option.client &&
-                !section->option.connect_before_ssl)
-            section->ssl_options_set|=SSL_OP_NO_TICKET;
-#endif /* SSL_OP_NO_TICKET */
-        if(context_init(section)) /* initialize TLS context */
-            return "Failed to initialize TLS context";
         break;
     case CMD_PRINT_DEFAULTS:
         break;
@@ -4637,75 +4932,6 @@ NOEXPORT int str_to_proto_version(const char *name) {
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif /* __GNUC__ */
 
-NOEXPORT char *tls_methods_set(SERVICE_OPTIONS *section, const char *arg) {
-    if(!arg) { /* defaults */
-        section->client_method=(SSL_METHOD *)SSLv23_client_method();
-        section->server_method=(SSL_METHOD *)SSLv23_server_method();
-    } else if(!strcasecmp(arg, "all")) {
-        section->client_method=(SSL_METHOD *)SSLv23_client_method();
-        section->server_method=(SSL_METHOD *)SSLv23_server_method();
-    } else if(!strcasecmp(arg, "SSLv2")) {
-#ifndef OPENSSL_NO_SSL2
-        section->client_method=(SSL_METHOD *)SSLv2_client_method();
-        section->server_method=(SSL_METHOD *)SSLv2_server_method();
-#else /* OPENSSL_NO_SSL2 */
-        return "SSLv2 not supported";
-#endif /* !OPENSSL_NO_SSL2 */
-    } else if(!strcasecmp(arg, "SSLv3")) {
-#ifndef OPENSSL_NO_SSL3
-        section->client_method=(SSL_METHOD *)SSLv3_client_method();
-        section->server_method=(SSL_METHOD *)SSLv3_server_method();
-#else /* OPENSSL_NO_SSL3 */
-        return "SSLv3 not supported";
-#endif /* !OPENSSL_NO_SSL3 */
-    } else if(!strcasecmp(arg, "TLSv1")) {
-#ifndef OPENSSL_NO_TLS1
-        section->client_method=(SSL_METHOD *)TLSv1_client_method();
-        section->server_method=(SSL_METHOD *)TLSv1_server_method();
-#else /* OPENSSL_NO_TLS1 */
-        return "TLSv1 not supported";
-#endif /* !OPENSSL_NO_TLS1 */
-    } else if(!strcasecmp(arg, "TLSv1.1")) {
-#ifndef OPENSSL_NO_TLS1_1
-        section->client_method=(SSL_METHOD *)TLSv1_1_client_method();
-        section->server_method=(SSL_METHOD *)TLSv1_1_server_method();
-#else /* OPENSSL_NO_TLS1_1 */
-        return "TLSv1.1 not supported";
-#endif /* !OPENSSL_NO_TLS1_1 */
-    } else if(!strcasecmp(arg, "TLSv1.2")) {
-#ifndef OPENSSL_NO_TLS1_2
-        section->client_method=(SSL_METHOD *)TLSv1_2_client_method();
-        section->server_method=(SSL_METHOD *)TLSv1_2_server_method();
-#else /* OPENSSL_NO_TLS1_2 */
-        return "TLSv1.2 not supported";
-#endif /* !OPENSSL_NO_TLS1_2 */
-    } else
-        return "Incorrect version of TLS protocol";
-    return NULL; /* OK */
-}
-
-NOEXPORT char *tls_methods_check(SERVICE_OPTIONS *section) {
-#ifdef USE_FIPS
-    if(new_global_options.option.fips) {
-#ifndef OPENSSL_NO_SSL2
-        if(section->option.client ?
-                section->client_method==(SSL_METHOD *)SSLv2_client_method() :
-                section->server_method==(SSL_METHOD *)SSLv2_server_method())
-            return "\"sslVersion = SSLv2\" not supported in FIPS mode";
-#endif /* !OPENSSL_NO_SSL2 */
-#ifndef OPENSSL_NO_SSL3
-        if(section->option.client ?
-                section->client_method==(SSL_METHOD *)SSLv3_client_method() :
-                section->server_method==(SSL_METHOD *)SSLv3_server_method())
-            return "\"sslVersion = SSLv3\" not supported in FIPS mode";
-#endif /* !OPENSSL_NO_SSL3 */
-    }
-#else /* USE_FIPS */
-    (void)section; /* squash the unused parameter warning */
-#endif /* USE_FIPS */
-    return NULL;
-}
-
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif /* __GNUC__ */
@@ -4812,190 +5038,6 @@ NOEXPORT void print_ssl_options(void) {
     for(option=ssl_opts; option->name; ++option)
         s_log(LOG_NOTICE, "options = %s", option->name);
 }
-
-/**************************************** read PSK file */
-
-#ifndef OPENSSL_NO_PSK
-
-NOEXPORT PSK_KEYS *psk_parse(char *line, int line_number) {
-    char *key_str;
-    unsigned char *key_buf;
-    const void *key_val;
-    const char *key_format;
-    long key_len;
-    PSK_KEYS *key;
-
-    key_str=strchr(line, ':');
-    if(!key_str) {
-        s_log(LOG_ERR,
-            "PSKsecrets line %d: Not in identity:key format", line_number);
-        return NULL;
-    }
-    *key_str++='\0';
-    if(strlen(line)+1U>(size_t)PSK_MAX_IDENTITY_LEN) { /* trailing '\0' */
-        s_log(LOG_ERR,
-            "PSKsecrets line %d: Identity longer than %d characters",
-            line_number, PSK_MAX_IDENTITY_LEN);
-        return NULL;
-    }
-
-    key_buf=OPENSSL_hexstr2buf(key_str, &key_len);
-    if(key_buf) { /* a valid hexadecimal value */
-        key_val=key_buf;
-        key_format="hexadecimal";
-    } else { /* interpret a non-hexadecimal value as a string */
-        key_val=key_str;
-        key_len=(long)strlen(key_str);
-        key_format="ASCII";
-    }
-    if(key_len>PSK_MAX_PSK_LEN) {
-        s_log(LOG_ERR,
-            "PSKsecrets line %d: Key longer than %d bytes",
-            line_number, PSK_MAX_PSK_LEN);
-        OPENSSL_free(key_buf);
-        return NULL;
-    }
-    if(key_len<16) {
-        /* shorter keys are unlikely to have sufficient entropy */
-        s_log(LOG_ERR,
-            "PSKsecrets line %d: Key shorter than 16 bytes", line_number);
-        OPENSSL_free(key_buf);
-        return NULL;
-    }
-
-    key=str_alloc_detached(sizeof(PSK_KEYS));
-    key->identity=str_dup_detached(line);
-    key->key_val=str_alloc_detached((size_t)key_len);
-    (void)memcpy(key->key_val, key_val, (size_t)key_len);
-    key->key_len=(unsigned)key_len;
-    key->next=NULL;
-    OPENSSL_free(key_buf);
-
-    s_log(LOG_INFO, "PSKsecrets line %d: "
-        "%ld-byte %s key configured for identity \"%s\"",
-        line_number, key_len, key_format, line);
-    return key;
-}
-
-NOEXPORT PSK_KEYS *psk_read(char *key_file) {
-    DISK_FILE *df;
-    char line[CONFLINELEN];
-    PSK_KEYS *head=NULL, *tail=NULL, *curr;
-    int line_number=0;
-
-    if(file_permissions(key_file))
-        return NULL;
-    df=file_open(key_file, FILE_MODE_READ);
-    if(!df) {
-        s_log(LOG_ERR, "Cannot open PSKsecrets file");
-        return NULL;
-    }
-    while(file_getline(df, line, CONFLINELEN)>=0) {
-        ++line_number;
-        if(!line[0]) /* empty line */
-            continue;
-        curr=psk_parse(line, line_number);
-        if(!curr) {
-            psk_free(head);
-            head=NULL;
-            break;
-        }
-        if(head)
-            tail->next=curr;
-        else
-            head=curr;
-        tail=curr;
-    }
-    file_close(df);
-    return head;
-}
-
-NOEXPORT PSK_KEYS *psk_dup(PSK_KEYS *src) {
-    PSK_KEYS *head=NULL, *tail=NULL, *curr;
-
-    for(; src; src=src->next) {
-        curr=str_alloc_detached(sizeof(PSK_KEYS));
-        curr->identity=str_dup_detached(src->identity);
-        curr->key_val=str_alloc_detached(src->key_len);
-        (void)memcpy(curr->key_val, src->key_val, src->key_len);
-        curr->key_len=src->key_len;
-        curr->next=NULL;
-        if(head)
-            tail->next=curr;
-        else
-            head=curr;
-        tail=curr;
-    }
-    return head;
-}
-
-NOEXPORT void psk_free(PSK_KEYS *head) {
-    while(head) {
-        PSK_KEYS *next=head->next;
-        str_free_const(head->identity);
-        str_free(head->key_val);
-        str_free(head);
-        head=next;
-    }
-}
-
-#endif
-
-/**************************************** read ticket key */
-
-#if OPENSSL_VERSION_NUMBER>=0x10000000L
-
-NOEXPORT TICKET_KEY *key_read(char *arg, const char *option) {
-    char *key_str;
-    unsigned char *key_buf;
-    long key_len;
-    TICKET_KEY *head=NULL;
-
-    key_str=str_dup_detached(arg);
-    key_buf=OPENSSL_hexstr2buf(key_str, &key_len);
-    if(key_buf)
-        if((key_len == 16) || (key_len == 32)) /* a valid 16 or 32 byte hexadecimal value */
-            s_log(LOG_INFO, "%s configured", option);
-        else { /* not a valid length */
-            s_log(LOG_ERR, "%s value has %ld bytes instead of required 16 or 32 bytes",
-                option, key_len);
-            OPENSSL_free(key_buf);
-            key_free(head);
-            return NULL;
-        }
-    else { /* not a valid hexadecimal form */
-        s_log(LOG_ERR, "Required %s is 16 or 32 byte hexadecimal key", option);
-        key_free(head);
-        return NULL;
-    }
-    head=str_alloc_detached(sizeof(TICKET_KEY));
-    head->key_val=str_alloc_detached((size_t)key_len);
-    (void)memcpy(head->key_val, key_buf, (size_t)key_len);
-    OPENSSL_free(key_buf);
-    head->key_len=(int)key_len;
-    return head;
-}
-
-NOEXPORT TICKET_KEY *key_dup(TICKET_KEY *src) {
-    TICKET_KEY *head=NULL;
-
-    if(src) {
-        head=str_alloc_detached(sizeof(TICKET_KEY));
-        head->key_val=str_alloc_detached((size_t)src->key_len);
-        (void)memcpy(head->key_val, src->key_val, (size_t)src->key_len);
-        head->key_len=src->key_len;
-    }
-    return head;
-}
-
-NOEXPORT void key_free(TICKET_KEY *head) {
-    if (head) {
-        str_free(head->key_val);
-        str_free(head);
-    }
-}
-
-#endif /* OpenSSL 1.0.0 or later */
 
 /**************************************** socket options */
 
@@ -5746,13 +5788,9 @@ NOEXPORT void name_list_free(NAME_LIST **dst) {
 }
 
 NOEXPORT void connect_session_free(SERVICE_OPTIONS *section) {
-    unsigned i;
 
     if(!section->connect_session)
         return;
-    for(i=0; i<section->connect_addr.num; i++)
-        if(section->connect_session[i])
-            SSL_SESSION_free(section->connect_session[i]);
     str_free(section->connect_session);
     section->connect_session=NULL;
 }

@@ -1717,48 +1717,59 @@ NOEXPORT void crypt_DES(DES_cblock dst, const_DES_cblock src,
 
 #endif
 
-NOEXPORT char *base64(int encode, const char *in, int len) {
-    BIO *bio, *b64;
-    char *out;
-    int n;
+#ifndef _WIN32
+#define WINAPI
+#else /*_WIN32*/
+BOOL WINAPI
+#ifdef _M_IX86
+_imp__TryAcquireSRWLockExclusive
+(long * lock)
+{
+    return (_interlockedbittestandset(lock, 0) == 0);
+}
+#else /*_M_IX86*/
+__imp_TryAcquireSRWLockExclusive
+(long long * lock)
+{
+    return (_interlockedbittestandset64(lock, 0) == 0);
+}
+#endif /*_M_IX86*/
+#endif /*_WIN32*/
 
-    b64=BIO_new(BIO_f_base64());
-    if(!b64)
-        return NULL;
-    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-    bio=BIO_new(BIO_s_mem());
-    if(!bio) {
-        (void)BIO_free(b64);
-        return NULL;
+int WINAPI CryptStringToBinaryA( const char * pszString, uint32_t cchString, uint32_t dwFlags, char * pbBinary, uint32_t * pcbBinary, uint32_t * pdwSkip, uint32_t * pdwFlags );
+int WINAPI CryptBinaryToStringA( const char * pbBinary, uint32_t cbBinary, uint32_t dwFlags, char * pszString, uint32_t * pcchString );
+
+NOEXPORT char * base64( int encode, const char * in, int len )
+{
+    char * out;
+
+    if( encode )
+    {
+        uint32_t dwFlags = 0x40000001; // CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF
+        uint32_t dwLen = 0;
+        if( !CryptBinaryToStringA( in, (uint32_t)len, dwFlags, NULL, &dwLen ) )
+            return NULL;
+        out = str_alloc( dwLen );
+        if( !out )
+            return NULL;
+        if( CryptBinaryToStringA( in, (uint32_t)len, dwFlags, out, &dwLen ) )
+            return out;
     }
-    if(encode)
-        bio=BIO_push(b64, bio);
-    n=BIO_write(bio, in, len);
-    if(n!=len) {
-        BIO_free_all(bio);
-        if(!encode)
-            (void)BIO_free(b64);
-        return NULL;
+    else
+    {
+        uint32_t dwFlags = 0x00000006; // CRYPT_STRING_BASE64
+        uint32_t dwLen = 0;
+        if( !CryptStringToBinaryA( in, (uint32_t)len, dwFlags, NULL, &dwLen, NULL, NULL ) )
+            return NULL;
+        out = str_alloc( dwLen );
+        if( !out )
+            return NULL;
+        if( CryptStringToBinaryA( in, (uint32_t)len, dwFlags, out, &dwLen, NULL, NULL ) )
+            return out;        
     }
-    (void)BIO_flush(bio); /* ignore the error if any */
-    if(encode) {
-        bio=BIO_pop(bio);
-        (void)BIO_free(b64);
-    } else {
-        bio=BIO_push(b64, bio);
-    }
-    n=BIO_pending(bio);
-    /* 32 bytes as a safety precaution for passing decoded data to crypt_DES */
-    /* n+1 to get null-terminated string on encode */
-    out=str_alloc(n<32 ? 32U : (size_t)n+1U);
-    n=BIO_read(bio, out, n);
-    if(n<0) {
-        BIO_free_all(bio);
-        str_free(out);
-        return NULL;
-    }
-    BIO_free_all(bio);
-    return out;
+
+    str_free( out );
+    return NULL;
 }
 
 /**************************************** capwin authentication support */

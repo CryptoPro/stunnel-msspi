@@ -134,20 +134,7 @@ unsigned long stunnel_thread_id(void) {
 
 #endif /* USE_WIN32 */
 
-#if OPENSSL_VERSION_NUMBER>=0x10000000L && OPENSSL_VERSION_NUMBER<0x10100004L
-NOEXPORT void threadid_func(CRYPTO_THREADID *tid) {
-    CRYPTO_THREADID_set_numeric(tid, stunnel_thread_id());
-}
-#endif
-
-NOEXPORT void thread_id_init(void) {
-#if OPENSSL_VERSION_NUMBER>=0x10000000L && OPENSSL_VERSION_NUMBER<0x10100000L
-    CRYPTO_THREADID_set_callback(threadid_func);
-#endif
-#if OPENSSL_VERSION_NUMBER<0x10000000L
-    CRYPTO_set_id_callback(stunnel_thread_id);
-#endif
-}
+NOEXPORT void thread_id_init( void ){ }
 
 /**************************************** locking */
 
@@ -466,36 +453,69 @@ NOEXPORT int s_add_lock_cb(int *num, int amount, int type,
 #endif
 }
 
+CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void) {
+    struct CRYPTO_dynlock_value *lock;
+    lock=str_alloc_detached(sizeof(CRYPTO_RWLOCK_REAL));
+    s_lock_init_debug(lock, __FILE__, __LINE__);
+    return lock;
+}
+
+int CRYPTO_THREAD_read_lock(CRYPTO_RWLOCK *lock) {
+    legacy_read_lock_debug(lock, __FILE__, __LINE__);
+    return 1;
+}
+
+int CRYPTO_THREAD_write_lock(CRYPTO_RWLOCK *lock) {
+    legacy_write_lock_debug(lock, __FILE__, __LINE__);
+    return 1;
+}
+
+int CRYPTO_THREAD_unlock(CRYPTO_RWLOCK *lock) {
+    legacy_unlock_debug(lock, __FILE__, __LINE__);
+    return 1;
+}
+
+void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock) {
+    s_lock_destroy_debug(lock, __FILE__, __LINE__);
+}
+
+#else /* USE_OS_THREADS */
+
+CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void) {
+    return NULL;
+}
+
+int CRYPTO_THREAD_read_lock(CRYPTO_RWLOCK *lock) {
+    (void)lock; /* squash the unused parameter warning */
+    return 1;
+}
+
+int CRYPTO_THREAD_write_lock(CRYPTO_RWLOCK *lock) {
+    (void)lock; /* squash the unused parameter warning */
+    return 1;
+}
+
+int CRYPTO_THREAD_unlock(CRYPTO_RWLOCK *lock) {
+    (void)lock; /* squash the unused parameter warning */
+    return 1;
+}
+
+void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock) {
+    (void)lock; /* squash the unused parameter warning */
+}
+
 #endif /* USE_OS_THREADS */
 
 #endif /* OPENSSL_VERSION_NUMBER<0x10100004L */
 
 NOEXPORT void locking_init(void) {
     size_t i;
-#if defined(USE_OS_THREADS) && OPENSSL_VERSION_NUMBER<0x10100004L
-    size_t num;
-
-    /* initialize the OpenSSL static locking */
-    num=(size_t)CRYPTO_num_locks();
-    lock_cs=str_alloc_detached(num*sizeof(struct CRYPTO_dynlock_value));
-    for(i=0; i<num; i++)
-        s_lock_init_debug(lock_cs+i, __FILE__, __LINE__);
-
-    /* initialize the OpenSSL static locking callbacks */
-    CRYPTO_set_locking_callback(s_locking_cb);
-    CRYPTO_set_add_lock_callback(s_add_lock_cb);
-
-    /* initialize the OpenSSL dynamic locking callbacks */
-    CRYPTO_set_dynlock_create_callback(s_dynlock_create_cb);
-    CRYPTO_set_dynlock_lock_callback(s_dynlock_lock_cb);
-    CRYPTO_set_dynlock_destroy_callback(s_dynlock_destroy_cb);
-#endif /* defined(USE_OS_THREADS) && OPENSSL_VERSION_NUMBER<0x10100004L */
 
     /* initialize stunnel critical sections */
     for(i=0; i<(size_t)STUNNEL_LOCKS; i++) { /* all the mutexes */
 #if OPENSSL_VERSION_NUMBER<0x10100004L || defined(LIBRESSL_VERSION_NUMBER)
 #ifdef USE_OS_THREADS
-        stunnel_locks[i]=str_alloc_detached(sizeof(CRYPTO_RWLOCK));
+        stunnel_locks[i]=str_alloc_detached(sizeof(CRYPTO_RWLOCK_REAL));
         s_lock_init_debug(stunnel_locks[i], __FILE__, __LINE__);
 #else
         stunnel_locks[i]=NULL;
@@ -649,6 +669,7 @@ NOEXPORT void *dummy_thread(void *arg) {
 }
 
 int sthreads_init(void) {
+#if !defined(__APPLE__)
     pthread_t thread_id;
     int error;
 
@@ -666,6 +687,7 @@ int sthreads_init(void) {
         ioerror("pthread_join");
         return 1;
     }
+#endif /* !__APPLE__*/
 
     thread_id_init();
     locking_init();

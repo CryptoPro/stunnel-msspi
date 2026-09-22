@@ -346,11 +346,19 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     A certificate chain is required in server mode, and optional in client mode.
 
+    This fork takes the value in one of four shapes, tried in that order: the SHA1 thumbprint of a certificate in the provider store, a PKCS#12 handed over as a base64 string, a certificate file, or a PKCS#12 file. The thumbprint is the usual one, because it names a certificate whose private key stays in a provider container. A PKCS#12 needs its password in *pin*.
+
     The **cert** option may be specified multiple times. The first certificate encountered is used as the server or client certificate, while any subsequent certificates are treated as intermediate chain elements. This functionality requires OpenSSL version 1.0.2 or later.
 
     This parameter is also used as the certificate identifier (PKCS#11 URI) when a hardware engine or provider is enabled.
 
     Note: The provider requires OpenSSL 3.0 or later
+
+-   **cert2** = CERT \| THUMBPRINT
+
+    a second certificate for the same service
+
+    A service can hold two certificates at once - a GOST one and an RSA one, say - and the provider offers whichever the peer can use. The value is taken in the same shapes as *cert*, and its password, if it needs one, goes in *pin2*.
 
 -   **checkEmail** = EMAIL
 
@@ -359,6 +367,8 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
     Certificates are accepted if no subject checks were specified, or the email address of the end-entity (leaf) peer certificate matches any of the email addresses specified with *checkEmail*.
 
     Multiple *checkEmail* options are allowed in a single service section.
+
+    Not supported in this build, and refused rather than accepted in silence: the provider matches host names, and a certificate is not taken apart here.
 
     This option requires OpenSSL 1.0.2 or later.
 
@@ -370,6 +380,8 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     Multiple *checkHost* options are allowed in a single service section.
 
+    The matching is done by the provider rather than here. The names are consulted when the certificate does not match the one from *connect*, so a certificate that already matched that name is accepted without them.
+
     This option requires OpenSSL 1.0.2 or later.
 
 -   **checkIP** = IP
@@ -379,6 +391,8 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
     Certificates are accepted if no subject checks were specified, or the IP address of the end-entity (leaf) peer certificate matches any of the IP addresses specified with *checkIP*.
 
     Multiple *checkIP* options are allowed in a single service section.
+
+    Not supported in this build, and refused rather than accepted in silence: the provider matches host names, and a certificate is not taken apart here.
 
     This option requires OpenSSL 1.0.2 or later.
 
@@ -520,6 +534,16 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     default: no
 
+-   **DTLSmtu** = BYTES
+
+    the link MTU a DTLS handshake keeps its datagrams within
+
+    IP and UDP are counted in the value, 28 bytes of them over IPv4 and 48 over IPv6, the same way *-mtu* is counted by **openssl s_client**. The provider does not discover the path MTU by itself, which is why the value is configured rather than measured.
+
+    It bounds the handshake only. Application data is not bounded by it: a datagram travels in one record of up to 16384 bytes, and a larger one is discarded.
+
+    default: 1300
+
 -   **engineId** = ENGINE_ID
 
     select engine ID for the service
@@ -557,6 +581,14 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
         priority - use the order specified in config file
 
     default: prio
+
+-   **for_hsm** = yes \| no (Unix only)
+
+    take the caller's Unix credentials from an accepted connection
+
+    The scheme CryptoPro HSM uses over a Unix socket: the uid and gid of the process at the other end are read before the handshake, and the provider picks the key by them. Revocation checking is switched off while it is on.
+
+    default: no
 
 -   **ident** = USERNAME
 
@@ -775,6 +807,20 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     default: the first identity specified in the *PSKsecrets* file.
 
+-   **pin** = PASSWORD
+
+    password for the container or the PKCS#12 named in *cert*
+
+    Also accepted under the name *pincode*. A certificate named by thumbprint needs it only when its container is protected by one.
+
+    default: none
+
+-   **pin2** = PASSWORD
+
+    the same for *cert2*
+
+    default: none
+
 -   **PSKsecrets** = FILE
 
     file with PSK identities and corresponding keys
@@ -869,6 +915,14 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     default: no
 
+-   **selftest** = yes \| no
+
+    use the private key once before the service carries anything
+
+    One signature or one encryption is made with the key as the certificate is loaded, so that a container that cannot be opened - a wrong *pin*, an absent token, a licence that does not cover the algorithm - is reported there and then instead of as a failed handshake later.
+
+    default: yes
+
 -   **setgid** = GROUP (Unix only)
 
     Unix group id
@@ -908,6 +962,14 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 -   **sessiond** = HOST:PORT
 
     address of sessiond TLS cache server
+
+-   **silent** = yes \| no
+
+    forbid the provider to ask the user anything
+
+    A tunnel has no terminal, so a provider that stopped to ask for a PIN would hang rather than fail. With *silent = no* it is allowed to prompt.
+
+    default: yes
 
 -   **sni** = SERVICE_NAME:SERVER_NAME_PATTERN (server mode)
 
@@ -1036,6 +1098,16 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 
     time to wait for expected data
 
+-   **TIMEOUThandshake** = SECONDS
+
+    seconds a handshake may take, from the first byte to the finished session
+
+    Until a handshake finishes, the peer holds a thread, a socket and a provider context and has carried nothing, so it is bounded on its own rather than by *TIMEOUTbusy*. Allow for what the provider does in that time: revocation checking may go to the network, and a key in a token or an HSM may need its PIN.
+
+    Set it to 0 to use *TIMEOUTbusy* instead.
+
+    default: 60 seconds
+
 -   **TIMEOUTclose** = SECONDS
 
     time to wait for close_notify (set to 0 for buggy MSIE)
@@ -1043,6 +1115,16 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
 -   **TIMEOUTconnect** = SECONDS
 
     time to wait to connect a remote host
+
+-   **TIMEOUTcookie** = SECONDS
+
+    seconds a DTLS peer may hold a session before it answers the cookie
+
+    A datagram that starts a session may be the first fragment of a ClientHello or merely shaped like one, and the two cannot be told apart until the rest of it arrives. Until the provider answers the peer - which it can only do once the ClientHello is whole and the cookie in it checks out - the session is bounded by this rather than by *TIMEOUTbusy*.
+
+    Set it to 0 to use *TIMEOUTbusy* for these sessions as well.
+
+    default: 5 seconds
 
 -   **TIMEOUTidle** = SECONDS
 
@@ -1207,6 +1289,14 @@ Note that if you wish to run **stunnel** in *inetd* mode (where it is provided a
     The end-entity (leaf) peer certificate needs to be stored either in the file specified with *CAfile*, or in the directory specified with *CApath*.
 
     default: no
+
+-   **verifyRevocation** = full \| auto \| no
+
+    what to make of a revocation check while verifying a chain
+
+    *full* requires the check to be made and to come back clean. *auto* also accepts a certificate that names no way to check it at all, which is the common case for a certificate issued without a CRL or an OCSP responder. *no* does not look.
+
+    default: auto
 
 # RETURN VALUE
 

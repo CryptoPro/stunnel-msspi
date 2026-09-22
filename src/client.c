@@ -35,7 +35,525 @@
  *   forward this exception.
  */
 
+#include "common.h"
 #include "prototypes.h"
+
+#ifdef MSSPI_LINUX
+#include <stdint.h>
+
+#define LIBCSPR_NAME "libcspr.so"
+#define SUP_LOAD_LIBRARY_DEFAULT 1
+#define SUP_LOAD_LIBRARY_SEPARATE 2
+#define SUP_LOAD_LIBRARY_LAZY 4
+
+typedef void *TSupModuleInstance;
+typedef void *TSupProc;
+
+TSupModuleInstance support_load_library_registry(const char *, int);
+TSupProc support_load_library_getaddr(TSupModuleInstance, const char *);
+void support_unload_library_registry(TSupModuleInstance);
+
+typedef uint32_t (*WIRE_SEND)(int);
+typedef uint32_t (*WIRE_RECV)(int, uid_t *, gid_t *);
+
+static WIRE_SEND wire_send;
+static WIRE_RECV wire_recv;
+static int wire_loaded;
+
+NOEXPORT void wire_load(void) {
+    TSupModuleInstance lib;
+
+    lib=support_load_library_registry(LIBCSPR_NAME,
+        SUP_LOAD_LIBRARY_DEFAULT | SUP_LOAD_LIBRARY_SEPARATE |
+        SUP_LOAD_LIBRARY_LAZY);
+    if(!lib) {
+        s_log(LOG_ERR, "for_hsm: unable to load %s", LIBCSPR_NAME);
+        return;
+    }
+
+    *(void **)&wire_send=
+        support_load_library_getaddr(lib, "WireSendFDnEUID");
+    if(!wire_send) {
+        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID is unavailable");
+        support_unload_library_registry(lib);
+        return;
+    }
+
+    *(void **)&wire_recv=
+        support_load_library_getaddr(lib, "WireRecvFDnEUID");
+    if(!wire_recv) {
+        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID is unavailable");
+        wire_send=NULL;
+        support_unload_library_registry(lib);
+        return;
+    }
+
+    wire_loaded=1;
+}
+
+NOEXPORT int wire_load_once(void) {
+#ifdef USE_PTHREAD
+    static pthread_once_t once=PTHREAD_ONCE_INIT;
+
+    if(pthread_once(&once, wire_load)) {
+        s_log(LOG_ERR, "for_hsm: pthread_once failed");
+        return 0;
+    }
+#else
+    static int initialized;
+
+    if(!initialized) {
+        wire_load();
+        initialized=1;
+    }
+#endif
+    return wire_loaded;
+}
+
+NOEXPORT int wire_send_credentials(SOCKET fd) {
+    uint32_t result;
+
+    if(!wire_load_once())
+        return 0;
+    result=wire_send((int)fd);
+    if(result)
+        s_log(LOG_ERR, "for_hsm: WireSendFDnEUID failed: 0x%08x",
+            (unsigned)result);
+    return result==0;
+}
+
+NOEXPORT int wire_receive_credentials(SOCKET fd, uid_t *uid, gid_t *gid) {
+    uint32_t result;
+
+    if(!wire_load_once())
+        return 0;
+    result=wire_recv((int)fd, uid, gid);
+    if(result)
+        s_log(LOG_ERR, "for_hsm: WireRecvFDnEUID failed: 0x%08x",
+            (unsigned)result);
+    return result==0;
+}
+#endif /* MSSPI_LINUX */
+
+void ssl_error( CLI * c, const char * str ) { (void)c; s_log( LOG_ERR, "%s", str ); }
+int RAND_bytes( unsigned char * buf, int num )
+{
+#ifdef USE_WIN32
+    return msspi_random( buf, num );
+#else
+    static int urandom_fd = -1;
+    if( urandom_fd < 0 )
+    {
+        int flags = O_RDONLY;
+#ifdef O_CLOEXEC
+        flags |= O_CLOEXEC;
+#endif
+        urandom_fd = open( "/dev/urandom", flags );
+#if !defined(O_CLOEXEC) && defined(FD_CLOEXEC)
+        if( urandom_fd >= 0 )
+            (void)fcntl( urandom_fd, F_SETFD, FD_CLOEXEC );
+#endif
+    }
+    if( urandom_fd >= 0 )
+    {
+        ssize_t n = 0;
+        while( n < num )
+        {
+            ssize_t r = read( urandom_fd, buf + n, num - n );
+            if( r <= 0 )
+                break;
+            n += r;
+        }
+        if( n == num )
+            return 1;
+    }
+    return 0;
+#endif
+}
+int SSL_get_error_msspi( MSSPI_HANDLE h, int ret )
+{
+    int err;
+    if( ret > 0 )
+        return SSL_ERROR_NONE;
+    err = msspi_state( h );
+    if( err & MSSPI_ERROR )
+        return SSL_ERROR_SYSCALL;
+    if( err & ( MSSPI_SENT_SHUTDOWN | MSSPI_RECEIVED_SHUTDOWN ) )
+        return SSL_ERROR_ZERO_RETURN;
+    if( err & MSSPI_WRITING )
+    {
+        if( err & MSSPI_LAST_PROC_WRITE )
+            return SSL_ERROR_WANT_WRITE;
+        if( err & MSSPI_READING )
+            return SSL_ERROR_WANT_READ;
+        return SSL_ERROR_WANT_WRITE;
+    }
+    if( err & MSSPI_READING )
+        return SSL_ERROR_WANT_READ;
+    if( ret == 0 )
+        return SSL_ERROR_SYSCALL; /* a call that failed is not a success */
+    return SSL_ERROR_NONE;
+}
+
+int SSL_get_shutdown_msspi( MSSPI_HANDLE h )
+{
+    int err = msspi_state( h );
+    if( err & MSSPI_ERROR || ( err & MSSPI_SENT_SHUTDOWN && err & MSSPI_RECEIVED_SHUTDOWN ) )
+        return SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN;
+    if( err & MSSPI_SENT_SHUTDOWN )
+        return SSL_SENT_SHUTDOWN;
+    if( err & MSSPI_RECEIVED_SHUTDOWN )
+        return SSL_RECEIVED_SHUTDOWN;
+    return 0;
+}
+
+const char * SSL_get_version_msspi( MSSPI_HANDLE h )
+{
+    const uint8_t * version_string = NULL;
+    size_t version_string_len = 0;
+    msspi_get_version( h, NULL, &version_string, &version_string_len );
+    return (const char *)version_string;
+}
+
+#ifdef MSSPI_LINUX
+#include <semaphore.h>
+#include <errno.h>
+static sem_t msspi_gate;
+static int msspi_gate_on = 0;
+void msspi_gate_init( long parallel )
+{
+    static int done = 0;
+    const char * e;
+    long n = parallel;
+    if( done )
+        return;
+    done = 1;
+    e = getenv( "STUNNEL_CRYPTO_PARALLEL" );
+    if( e && *e )
+    {
+        char * end;
+        long v = strtol( e, &end, 10 );
+        if( end != e && *end == '\0' && v >= 0 )
+            n = v;
+    }
+    if( n > 0 && sem_init( &msspi_gate, 0, ( unsigned )n ) == 0 )
+        msspi_gate_on = 1;
+}
+NOEXPORT void msspi_gate_enter( void )
+{
+    if( msspi_gate_on )
+        while( sem_wait( &msspi_gate ) == -1 && errno == EINTR )
+            ;
+}
+NOEXPORT void msspi_gate_leave( void )
+{
+    if( msspi_gate_on )
+        sem_post( &msspi_gate );
+}
+#endif /* MSSPI_LINUX */
+
+int BIO_sock_non_fatal_error( int err )
+{
+    switch( err )
+    {
+# if defined(OPENSSL_SYS_WINDOWS) || defined(OPENSSL_SYS_NETWARE)
+#  if defined(WSAEWOULDBLOCK)
+        case WSAEWOULDBLOCK:
+#  endif
+
+#  if 0                         /* This appears to always be an error */
+#   if defined(WSAENOTCONN)
+        case WSAENOTCONN:
+#   endif
+#  endif
+# endif
+
+# ifdef EWOULDBLOCK
+#  ifdef WSAEWOULDBLOCK
+#   if WSAEWOULDBLOCK != EWOULDBLOCK
+        case EWOULDBLOCK:
+#   endif
+#  else
+        case EWOULDBLOCK:
+#  endif
+# endif
+
+# if defined(ENOTCONN)
+        case ENOTCONN:
+# endif
+
+# ifdef EINTR
+        case EINTR:
+# endif
+
+# ifdef EAGAIN
+#  if EWOULDBLOCK != EAGAIN
+        case EAGAIN:
+#  endif
+# endif
+
+# ifdef EPROTO
+        case EPROTO:
+# endif
+
+# ifdef EINPROGRESS
+        case EINPROGRESS:
+# endif
+
+# ifdef EALREADY
+        case EALREADY:
+# endif
+            return ( 1 );
+            /* break; */
+        default:
+            break;
+    }
+    return ( 0 );
+}
+
+int BIO_sock_should_retry( int i )
+{
+    int err;
+
+    if( ( i == 0 ) || ( i == -1 ) )
+    {
+        err = get_last_socket_error();
+
+# if defined(OPENSSL_SYS_WINDOWS) && 0/* more microsoft stupidity? perhaps
+            * not? Ben 4/1/99 */
+        if( ( i == -1 ) && ( err == 0 ) )
+            return ( 1 );
+# endif
+
+        return ( BIO_sock_non_fatal_error( err ) );
+    }
+    return ( 0 );
+}
+
+#ifdef USE_DTLS
+
+/* Keep a datagram the accept loop had to read before this peer had a socket
+   of its own.  Returns 0 when the queue is full, which the caller treats as
+   a datagram lost in transit — DTLS recovers from that. */
+int udp_preload_push( CLI * c, const void * data, size_t len ) {
+    unsigned char * copy;
+
+    if( c->udp_preload_count >= MAX_UDP_PRELOAD || !len )
+        return 0;
+
+    copy = str_alloc_detached( len );
+    memcpy( copy, data, len );
+    c->udp_preload[c->udp_preload_count] = copy;
+    c->udp_preload_len[c->udp_preload_count] = len;
+    c->udp_preload_count++;
+    return 1;
+}
+
+/* The oldest kept datagram, or 0 when there is none.  Datagram boundaries are
+   preserved: a caller asking for less than a whole datagram loses the rest,
+   exactly as a short recv() would. */
+size_t udp_preload_pop( CLI * c, void * buf, size_t len ) {
+    size_t taken;
+
+    if( c->udp_preload_pos >= c->udp_preload_count )
+        return 0;
+
+    taken = c->udp_preload_len[c->udp_preload_pos];
+    if( taken > len )
+        taken = len;
+    memcpy( buf, c->udp_preload[c->udp_preload_pos], taken );
+
+    str_free( c->udp_preload[c->udp_preload_pos] );
+    c->udp_preload[c->udp_preload_pos] = NULL;
+    c->udp_preload_pos++;
+    return taken;
+}
+
+void udp_preload_free( CLI * c ) {
+    while( c->udp_preload_pos < c->udp_preload_count ) {
+        str_free( c->udp_preload[c->udp_preload_pos] );
+        c->udp_preload[c->udp_preload_pos] = NULL;
+        c->udp_preload_pos++;
+    }
+    c->udp_preload_count = 0;
+    c->udp_preload_pos = 0;
+}
+
+#endif /* USE_DTLS */
+
+int stunnel_msspi_bio_read( CLI * c, void * buf, int len )
+{
+    int io;
+
+#ifdef USE_DTLS
+    /* Only a server queues records here; what a client drained off its
+       listening socket is plaintext, and transfer_udp() sends it. */
+    if( !c->opt->option.client && c->udp_preload_pos < c->udp_preload_count ) {
+        size_t taken = udp_preload_pop( c, buf, (size_t)len );
+
+        if( taken )
+            return (int)taken;
+    }
+
+    /* The cookie exchange runs in the accept loop, which must not block:
+       there is nothing behind the datagram it already handed over. */
+    if( c->flag.udp_listening )
+        return -1;
+
+    /* A peer that keeps the socket readable keeps the provider reading and
+       discarding inside one call.  Stop feeding it once the handshake is out
+       of time, so the caller gets back to its own deadline. */
+    if( c->handshake_deadline && time( NULL ) >= c->handshake_deadline )
+        return -1;
+#endif /* USE_DTLS */
+
+    set_last_socket_error( 0 );
+    io = readsocket( c->rfd, buf, len );
+
+    if( io > 0 )
+        return io;
+
+    if( BIO_sock_should_retry( io ) )
+        return -1;
+
+    return 0;
+}
+
+int stunnel_msspi_bio_write( CLI * c, const void * buf, int len )
+{
+    int io;
+
+    set_last_socket_error( 0 );
+#ifdef USE_DTLS
+    if( c->opt->sock_type == SOCK_DGRAM ) {
+        const unsigned char * record = (const unsigned char *)buf;
+        /* handshake record, message type after the 13-byte header */
+        int handshake = len >= 14 && record[0] == 22;
+
+        if( c->flag.udp_listening ) {
+            if( handshake && record[13] == 3 )
+                c->flag.udp_hello_verify = 1;
+
+            io = (int)sendto( c->wfd, buf, (size_t)len, 0,
+                &c->peer_addr.sa, c->peer_addr_len );
+        } else
+            io = writesocket( c->wfd, buf, len );
+
+        /* A ServerHello is written once the ClientHello arrived whole and
+           carried back the cookie: that is the peer receiving where it says
+           it does, wherever we are when we write it. */
+        if( io > 0 && handshake && record[13] == 2 )
+            c->flag.udp_unproven = 0;
+    } else
+#endif /* USE_DTLS */
+    io = writesocket( c->wfd, buf, len );
+
+    if( io > 0 )
+        return io;
+
+    if( BIO_sock_should_retry( io ) )
+        return -1;
+
+    return 0;
+}
+
+/****************************** TLS backend
+
+   A build talks to exactly one TLS implementation: OpenSSL, or the CryptoPro
+   SSP through msspi.  Every operation that differs between them is dispatched
+   here and nowhere else, so the msspi calls stay in plain sight and an
+   OpenSSL call written anywhere else keeps its own meaning. */
+
+#ifndef MSSPI_LINUX
+#define msspi_gate_enter()
+#define msspi_gate_leave()
+#endif
+
+int ssl_connect(CLI *c) {
+    int ret;
+
+    msspi_gate_enter();
+    ret=msspi_connect(c->msh);
+    msspi_gate_leave();
+    return ret;
+}
+
+int ssl_accept(CLI *c) {
+    int ret;
+
+    msspi_gate_enter();
+    ret=msspi_accept(c->msh);
+    msspi_gate_leave();
+    return ret;
+}
+
+int ssl_read(CLI *c, void *buf, int len) {
+    int ret;
+
+    msspi_gate_enter();
+    ret=msspi_read(c->msh, buf, len);
+    msspi_gate_leave();
+    return ret;
+}
+
+int ssl_write(CLI *c, const void *buf, int len) {
+    int ret;
+
+    msspi_gate_enter();
+    ret=msspi_write(c->msh, buf, len);
+    msspi_gate_leave();
+    return ret;
+}
+
+int ssl_shutdown(CLI *c) {
+    int ret;
+
+    msspi_gate_enter();
+    ret=msspi_shutdown(c->msh);
+    msspi_gate_leave();
+    return ret;
+}
+
+void ssl_close(CLI *c) {
+    msspi_gate_enter();
+    msspi_close(c->msh);
+    c->msh=NULL;
+    msspi_gate_leave();
+}
+
+int ssl_pending(CLI *c) {
+    return msspi_pending(c->msh);
+}
+
+/* whether the record layer holds data that ssl_pending() does not report */
+int ssl_has_pending(CLI *c) {
+    return msspi_pending(c->msh);
+}
+
+int ssl_get_error(CLI *c, int ret) {
+    return SSL_get_error_msspi(c->msh, ret);
+}
+
+int ssl_get_shutdown(CLI *c) {
+    return SSL_get_shutdown_msspi(c->msh);
+}
+
+/* msspi cannot record a shutdown that was not sent, so only the request to
+   send one is passed on */
+void ssl_set_shutdown(CLI *c, int mode) {
+    if(mode & SSL_SENT_SHUTDOWN)
+        ssl_shutdown(c);
+}
+
+const char *ssl_get_version(CLI *c) {
+    return SSL_get_version_msspi(c->msh);
+}
+
+/* the negotiated protocol as an SSL*_VERSION constant */
+int ssl_version(CLI *c) {
+    (void)c;
+    return TLS1_VERSION;
+}
 
 #ifndef SHUT_RD
 #define SHUT_RD 0
@@ -55,15 +573,14 @@ NOEXPORT void local_start(CLI *c);
 NOEXPORT void remote_start(CLI *c);
 NOEXPORT void ssl_start(CLI *c);
 #if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-NOEXPORT BIO *set_preload_bio(CLI *c);
 #endif /* USE_DTLS && OpenSSL version >= 1.1.0 */
-NOEXPORT void ssl_start_new(CLI *c);
-NOEXPORT void ssl_init_client(CLI *c);
-NOEXPORT void ssl_init_server(CLI *c);
-NOEXPORT void ssl_handshake_loop(CLI *c, BIO *udp_bio);
-NOEXPORT void ssl_handshake_poll(CLI *c, int rd, int wr);
-NOEXPORT void ssl_start_finish(CLI *c);
-NOEXPORT void session_cache_retrieve(CLI *c);
+NOEXPORT void ssl_start_new(CLI *);
+NOEXPORT void ssl_init_client(CLI *);
+NOEXPORT void ssl_init_server(CLI *);
+NOEXPORT void ssl_handshake_loop(CLI *c);
+NOEXPORT void ssl_handshake_poll(CLI *, int, int, time_t);
+NOEXPORT void ssl_start_finish(CLI *);
+NOEXPORT void session_cache_retrieve(CLI *);
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
 NOEXPORT void print_tmp_key(SSL *s);
 #endif
@@ -91,6 +608,11 @@ NOEXPORT void reset(SOCKET fd, const char *txt);
 NOEXPORT void check_socket_error(CLI *c, SOCKET fd, const char *name);
 NOEXPORT void check_fds_error(CLI *c);
 
+NOEXPORT int stunnel_msspi_cert_cb(void *);
+NOEXPORT int msspi_load_own_certs(CLI *);
+NOEXPORT int msspi_verify_peer(CLI *);
+static int msspi_no_resume_cache_id=0;
+
 /* allocate local data structure for the new thread */
 CLI *alloc_client(SERVICE_OPTIONS *opt) {
     static unsigned long long seq=0;
@@ -109,12 +631,16 @@ CLI *alloc_client(SERVICE_OPTIONS *opt) {
  * create_client() calls this on failure and in the FORK parent. */
 void free_client(CLI *c) {
 #ifdef USE_DTLS
-    (void)BIO_free(c->udp_preload_bio); /* server: DTLS fragments,
-                                     client: plaintext datagrams */
+    udp_preload_free(c);
+    /* the cookie exchange opens a context on the accept loop, and a peer can
+       be refused after that: closed here rather than through the gate, for
+       the same reason the probe calls the provider directly */
+    if(c->msh) {
+        msspi_close(c->msh);
+        c->msh=NULL;
+    }
 #endif
     str_free(c->accepted_address);
-    if(c->ssl)
-        SSL_free(c->ssl);
     if(c->local_rfd.fd!=INVALID_SOCKET)
         (void)closesocket(c->local_rfd.fd);
     str_free(c);
@@ -309,7 +835,8 @@ NOEXPORT void client_run(CLI *c) {
         /* initialize the client context */
     c->remote_fd.fd=INVALID_SOCKET;
     c->fd=INVALID_SOCKET;
-    /* c->ssl may be preinitialized by DTLSv1_listen() */
+    if( !c->is_exec )
+        c->exec_fd = INVALID_SOCKET;
     c->sock_bytes=c->ssl_bytes=0;
     if(c->opt->option.client) {
         c->sock_rfd=&(c->local_rfd);
@@ -364,24 +891,16 @@ NOEXPORT void client_run(CLI *c) {
         (void)closesocket(c->fd);
     c->fd=INVALID_SOCKET;
 
-        /* cleanup the TLS context */
-    if(c->ssl) { /* TLS initialized */
-        SSL_set_shutdown(c->ssl, SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
-        SSL_free(c->ssl);
-        c->ssl=NULL;
-#if OPENSSL_VERSION_NUMBER >= 0x10100006L
-        /* OpenSSL version >= 1.1.0-pre6 */
-        /* the function is no longer needed */
-#elif OPENSSL_VERSION_NUMBER >= 0x10100004L
-        /* OpenSSL version 1.1.0-pre4 or 1.1.0-pre5 */
-        ERR_remove_thread_state();
-#elif OPENSSL_VERSION_NUMBER >= 0x10000000L
-        /* OpenSSL version >= 1.0.0 */
-        ERR_remove_thread_state(NULL);
-#else
-        /* OpenSSL version < 1.0.0 */
-        ERR_remove_state(0);
-#endif
+    if( c->msh )
+    {
+        ssl_shutdown( c );
+        ssl_close( c );
+    }
+
+    if( c->exec_fd != INVALID_SOCKET )
+    {
+        closesocket( c->exec_fd );
+        c->exec_fd = INVALID_SOCKET;
     }
 
         /* cleanup the remote socket */
@@ -457,6 +976,9 @@ NOEXPORT void client_try(CLI *c) {
             c->opt->protocol_middle(c);
         remote_start(c);
     }
+    if( c->is_exec )
+        connect_local( c );
+
     if(c->opt->protocol_late && !c->flag.redirect)
         c->opt->protocol_late(c);
     if(socket_type_is_datagram(c->opt->sock_type) &&
@@ -530,6 +1052,20 @@ NOEXPORT void local_start(CLI *c) {
         return;
     }
 
+#if defined(MSSPI_LINUX) && defined(HAVE_STRUCT_SOCKADDR_UN)
+    if(c->opt->option.for_hsm && !c->is_exec &&
+            c->peer_addr.sa.sa_family==AF_UNIX) {
+        uid_t uid;
+        gid_t gid;
+
+        if(!wire_receive_credentials(c->local_rfd.is_socket ?
+                c->local_rfd.fd : c->local_wfd.fd, &uid, &gid))
+            throw_exception(c, 1);
+        s_log(LOG_DEBUG, "for_hsm: received Unix credentials uid=%ld gid=%ld",
+            (long)uid, (long)gid);
+    }
+#endif
+
     /* authenticate based on retrieved IP address of the client */
     if(!c->accepted_address) {
         c->accepted_address=s_ntop(&c->peer_addr, c->peer_addr_len);
@@ -541,6 +1077,16 @@ NOEXPORT void local_start(CLI *c) {
     auth_user(c);
     s_log(LOG_NOTICE, "Service [%s] accepted connection from %s",
         c->opt->servname, c->accepted_address);
+
+    if( c->local_rfd.is_socket || c->local_wfd.is_socket )
+    {
+        addr_len = sizeof( SOCKADDR_UNION );
+        if( !getsockname( c->local_rfd.is_socket ? c->local_rfd.fd : c->local_wfd.fd, &addr.sa, &addr_len ) )
+        {
+            memcpy( &c->local_addr.sa, &addr.sa, (size_t)addr_len );
+            c->local_addr_len = addr_len;
+        }
+    }
 }
 
 NOEXPORT void remote_start(CLI *c) {
@@ -574,142 +1120,485 @@ NOEXPORT void remote_start(CLI *c) {
         (long)c->remote_fd.fd);
 }
 
+/* A certificate identifier is a selector, a PFX string or a file name, and it
+   is tried in that order at session setup.  The file is read here instead,
+   once per configuration, so that a session — and with DTLS every ClientHello,
+   because the cookie exchange opens a context — stays away from the disk.
+
+   A name that does not open is the ordinary case of a selector and says
+   nothing; a name that opens but cannot be used is a real configuration
+   problem and is reported here rather than at the first connection. */
+char *msspi_read_cert_file(const char *path, size_t *len) {
+    const long int MAX_SIZE=1024*1024;
+    const char *errstr;
+    FILE *file;
+    long int size=0;
+    char *data;
+
+    *len=0;
+    file=fopen(path, "rb");
+    if(!file) /* a selector, most likely */
+        return NULL;
+
+    for(;;) {
+        if(fseek(file, 0, SEEK_END)==-1L || (size=ftell(file))==-1L ||
+                fseek(file, 0, SEEK_SET)==-1L) {
+            errstr="can not read file";
+            break;
+        }
+        if(!size) {
+            errstr="file is empty";
+            break;
+        }
+        if(size>MAX_SIZE) {
+            errstr="file too large";
+            break;
+        }
+        data=str_alloc_detached((size_t)size);
+        if(fread(data, 1, (size_t)size, file)!=(size_t)size) {
+            str_free(data);
+            errstr="can not read file";
+            break;
+        }
+        fclose(file);
+        *len=(size_t)size;
+        s_log(LOG_INFO, "msspi: cert read from file \"%s\" (%ld bytes)",
+            path, size);
+        return data;
+    }
+
+    fclose(file);
+    s_log(LOG_ERR, "msspi: cert file \"%s\" unusable: %s", path, errstr);
+    return NULL;
+}
+
+/* A thumbprint or a file name is safe to put in a log; a PKCS#12 handed over
+   as a string is the key itself, and a value nothing recognized may be one. */
+NOEXPORT const char *loggable_cert(const char *cert, char certtype) {
+    return certtype==1 || certtype==3 || certtype==4 ? cert : "(withheld)";
+}
+
+NOEXPORT int msspi_load_own_certs(CLI *c) {
+    size_t j;
+
+    for(j=0; j<2; j++) {
+        char *cert=j==0 ? (c->opt->cert ? c->opt->cert->name : NULL) : c->opt->cert2;
+        char *pin=j==0 ? c->opt->pin : c->opt->pin2;
+        char *pcerttype=j==0 ? &c->opt->certtype : &c->opt->certtype2;
+        /* certtype: 0 unknown, 1 selector, 2 pfx string, 3 cert file, 4 pfx file */
+        char certtype=*pcerttype;
+        char is_ok=0;
+        char is_pfx=0;
+        char is_cert_file=0;
+
+        if(!cert) {
+            is_ok=1;
+        } else if((certtype==0 || certtype==1) &&
+                msspi_add_mycert(c->msh, (const uint8_t *)cert, strlen(cert))) {
+            certtype=1;
+            *pcerttype=certtype;
+            is_ok=1;
+        } else if(pin && (certtype==0 || certtype==2) &&
+                msspi_add_mycert_pfx(c->msh, (const uint8_t *)cert, strlen(cert),
+                    (const uint8_t *)pin, strlen(pin))) {
+            certtype=2;
+            *pcerttype=certtype;
+            is_ok=1;
+            is_pfx=1;
+        }
+
+        if(!is_ok) {
+            const char *errstr="unknown";
+            /* read at configuration time: a session, and for DTLS every
+               ClientHello, must not go to disk */
+            char *str_file=j==0 ? c->opt->certdata : c->opt->certdata2;
+            size_t size_file=j==0 ? c->opt->certdata_len : c->opt->certdata2_len;
+
+            for(;;) {
+                if(!str_file) {
+                    errstr="can not open file";
+                    break;
+                }
+                if(certtype==0) { /* CPCSP-14527 better diagnostic flow */
+                    MSSPI_CERT_HANDLE ch=msspi_cert_open((const uint8_t *)str_file, size_file);
+                    if(ch) {
+                        is_cert_file=1;
+                        msspi_cert_close(ch);
+                    }
+                } else if(certtype==3) {
+                    is_cert_file=1;
+                }
+
+                if(is_cert_file &&
+                        msspi_add_mycert(c->msh, (const uint8_t *)str_file, size_file)) {
+                    certtype=3;
+                    *pcerttype=certtype;
+                    is_ok=1;
+                    break;
+                }
+                if(is_cert_file) {
+                    errstr="not found in certstore";
+                    break;
+                }
+                if(pin && (certtype==0 || certtype==4) &&
+                        msspi_add_mycert_pfx(c->msh, (const uint8_t *)str_file, size_file,
+                            (const uint8_t *)pin, strlen(pin))) {
+                    certtype=4;
+                    *pcerttype=certtype;
+                    is_ok=1;
+                    is_pfx=1;
+                    break;
+                }
+                errstr="not cert or pfx";
+                break;
+            }
+
+            if(!is_ok) {
+                s_log(LOG_ERR, "msspi: add_mycert failed: \"%s\" (cert = \"%s\")",
+                    errstr, loggable_cert(cert, certtype));
+                return 0;
+            }
+        }
+
+        if(cert && !is_pfx && !msspi_set_mycert_options(c->msh,
+                c->opt->option.silent, (const uint8_t *)pin, pin ? strlen(pin) : 0,
+                c->opt->option.selftest)) {
+            s_log(LOG_ERR,
+                "msspi: msspi_set_mycert_options failed (cert = \"%s\", pin configured = \"%s\", silent = \"%s\", selftest = \"%s\")",
+                loggable_cert(cert, certtype), pin ? "yes" : "no",
+                c->opt->option.silent ? "yes" : "no",
+                c->opt->option.selftest ? "yes" : "no");
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+NOEXPORT int msspi_verify_peer(CLI *c) {
+    if(c->opt->option.require_cert) {
+        size_t count=0;
+        if(!msspi_get_peercerts(c->msh, 0, 0, &count) || count==0) {
+            s_log(LOG_ERR, "msspi: no peer cert (require_cert = 1)");
+            return 0;
+        }
+    }
+
+    if(c->opt->option.verify_chain) {
+        int level=LOG_ERR;
+        char status_str[32];
+        const char *errinfo=status_str;
+        uint32_t verify_status=(uint32_t)-1;
+        msspi_get_verify_status(c->msh, &verify_status);
+
+        /* The name is asked first, because the provider answers about it
+           ahead of anything else the chain has to say: a name from checkHost
+           is tried until the mismatch is gone, and whatever the chain reports
+           for the name that matched is what the rest of this judges. */
+        if(verify_status==CERT_E_CN_NO_MATCH && c->opt->sni && c->opt->check_host) {
+            NAME_LIST *ptr;
+
+            for(ptr=c->opt->check_host; ptr; ptr=ptr->next) {
+                msspi_set_hostname(c->msh, (const uint8_t *)ptr->name, strlen(ptr->name));
+                msspi_get_verify_status(c->msh, &verify_status);
+                if(verify_status!=CERT_E_CN_NO_MATCH)
+                    break; /* this name matched; the rest is not about names */
+            }
+
+            msspi_set_hostname(c->msh, (const uint8_t *)c->opt->sni, strlen(c->opt->sni));
+        }
+
+        snprintf(status_str, sizeof(status_str), "failed (0x%08X)", verify_status);
+        switch(verify_status) {
+        case 0:
+            level=LOG_INFO;
+            errinfo="OK";
+            break;
+        case CRYPT_E_NO_REVOCATION_CHECK:
+            if(c->opt->verify_revocation != REVOCATION_AUTO)
+                break;
+            level=LOG_INFO;
+            errinfo="OK (CRYPT_E_NO_REVOCATION_CHECK)";
+            break;
+        case CERT_E_CN_NO_MATCH:
+            errinfo="failed (CERT_E_CN_NO_MATCH)";
+            break;
+        default:
+            break;
+        }
+
+        s_log(level, "msspi: verify %s", errinfo);
+        if(level==LOG_ERR)
+            return 0;
+    }
+
+    if(c->opt->option.verify_peer) {
+        uint32_t verify_peer_status=(uint32_t)-1;
+        msspi_get_peercert_in_store_status(c->msh,
+            (const uint8_t *)c->opt->ca_dir, strlen(c->opt->ca_dir),
+            &verify_peer_status);
+        if(verify_peer_status) {
+            s_log(LOG_ERR, "msspi: verifypeer failed (CApath = \"%s\")", c->opt->ca_dir);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: verifypeer OK");
+    }
+
+    if(c->opt->checkSubject) {
+        NAME_LIST *ptr;
+        const uint8_t *subject;
+        size_t len;
+        if(!msspi_get_peernames(c->msh, &subject, &len, NULL, NULL)) {
+            s_log(LOG_ERR, "msspi: get_peernames( subject ) failed");
+            return 0;
+        }
+
+        for(ptr=c->opt->checkSubject; ptr; ptr=ptr->next)
+            if(strlen(ptr->name)+1==len && !memcmp(ptr->name, subject, len))
+                break;
+
+        if(!ptr) {
+            s_log(LOG_ERR, "msspi: checkSubject failed (subject = \"%s\")", (const char *)subject);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: checkSubject OK");
+    }
+
+    if(c->opt->checkIssuer) {
+        NAME_LIST *ptr;
+        const uint8_t *issuer;
+        size_t len;
+        if(!msspi_get_peernames(c->msh, NULL, NULL, &issuer, &len)) {
+            s_log(LOG_ERR, "msspi: get_peernames( issuer ) failed");
+            return 0;
+        }
+
+        for(ptr=c->opt->checkIssuer; ptr; ptr=ptr->next)
+            if(strlen(ptr->name)+1==len && !memcmp(ptr->name, issuer, len))
+                break;
+
+        if(!ptr) {
+            s_log(LOG_ERR, "msspi: checkIssuer failed (issuer = \"%s\")", (const char *)issuer);
+            return 0;
+        }
+
+        s_log(LOG_INFO, "msspi: checkIssuer OK");
+    }
+
+    return 1;
+}
+
+/* 0 aborts the handshake, and what went wrong is logged where it was found:
+   the session remembers that the decision was ours. */
+NOEXPORT int stunnel_msspi_cert_cb(void *arg) {
+    CLI *c=(CLI *)arg;
+
+    if(!c || !c->msh)
+        return 0;
+    if(!msspi_verify_peer(c)) {
+        c->msspi_cert_aborted=1;
+        return 0;
+    }
+    c->msspi_peer_verified=1;
+    if(!msspi_load_own_certs(c)) {
+        c->msspi_cert_aborted=1;
+        return 0;
+    }
+    return 1;
+}
+/* Builds the session without deciding what a failure means: the accept loop
+   runs outside any exception context, the client thread inside one. */
+NOEXPORT int msspi_session_open(CLI *c) {
+    c->msh = NULL;
+    c->msspi_peer_verified = 0;
+    c->msspi_cert_aborted = 0;
+#ifdef USE_DTLS
+    if( !c->flag.udp_listening )
+#endif
+    {
+        if( c->opt->option.client ) {
+            c->rfd = c->wfd = c->remote_fd.fd;
+        } else {
+            /* stdio mode hands the service two descriptors, not one */
+            c->rfd = c->local_rfd.fd;
+            c->wfd = c->local_wfd.fd;
+        }
+    }
+
+    c->msh = msspi_open( c, (msspi_read_cb)stunnel_msspi_bio_read, (msspi_write_cb)stunnel_msspi_bio_write );
+
+    if( !c->msh )
+    {
+        s_log( LOG_ERR, "msspi: open failed" );
+        return 0;
+    }
+
+    if( !c->opt->option.session_resume )
+    {
+        int cache_id = s_atomic_add( &msspi_no_resume_cache_id, 1, LOCK_CLIENTS );
+        if( !msspi_set_cachestring( c->msh, (const uint8_t *)&cache_id, sizeof cache_id ) )
+        {
+            s_log( LOG_ERR, "msspi: failed to set no-resume credential cache string" );
+            return 0;
+        }
+    }
+
+    /* the side comes first: what follows keys the credential cache, and that
+       key does not name the side itself */
+    if( c->opt->option.client )
+        msspi_set_client( c->msh, 1 );
+
+#ifdef USE_DTLS
+    if( c->opt->sock_type == SOCK_DGRAM )
+    {
+        int family = AF_INET;
+        size_t overhead;
+
+        msspi_set_dtls( c->msh, 1 );
+        /* the provider default is a TLS version, so DTLS has to be asked for */
+        msspi_set_version( c->msh, DTLS1_2_VERSION, DTLS1_2_VERSION );
+        /* The SSP binds the cookie to this address.  On a server it is the
+           peer the listener read the ClientHello from; on a client c->peer_addr
+           names the plaintext side instead, so the remote socket is asked. */
+        if( c->opt->option.client )
+        {
+            SOCKADDR_UNION remote;
+            socklen_t remote_len = sizeof remote;
+
+            if( c->remote_fd.fd != INVALID_SOCKET &&
+                    !getpeername( c->remote_fd.fd, &remote.sa, &remote_len ) )
+            {
+                msspi_set_dtls_peeraddr( c->msh,
+                    (const uint8_t *)&remote, (size_t)remote_len );
+                family = remote.sa.sa_family;
+            }
+        }
+        else if( c->peer_addr_len )
+        {
+            msspi_set_dtls_peeraddr( c->msh,
+                (const uint8_t *)&c->peer_addr, (size_t)c->peer_addr_len );
+            family = c->peer_addr.sa.sa_family;
+        }
+        /* DTLSmtu is a link MTU, as -mtu is to OpenSSL, while the provider is
+           given a datagram: IP and UDP come off it first */
+        overhead = family == AF_INET6 ? 40 + 8 : 20 + 8;
+        msspi_set_dtls_mtu( c->msh, c->opt->dtls_mtu - overhead );
+    }
+    else
+#endif /* USE_DTLS */
+    /* Preserve MSSPI provider defaults when stunnel min/max are unset:
+     * grbitEnabledProtocols must remain 0, not an explicit all-protocols mask. */
+    if( c->opt->min_proto_version || c->opt->max_proto_version )
+        msspi_set_version( c->msh, c->opt->min_proto_version, c->opt->max_proto_version );
+
+    if( c->opt->sni )
+        msspi_set_hostname( c->msh, (const uint8_t *)c->opt->sni, strlen( c->opt->sni ) );
+
+    if( c->opt->option.request_cert )
+        msspi_set_peerauth( c->msh, 1 );
+
+    if( ( c->opt->verify_revocation == REVOCATION_NO
+#ifdef MSSPI_LINUX
+            || c->opt->option.for_hsm
+#endif
+            ) && !msspi_set_verify_revocation( c->msh, 0 ) )
+    {
+        s_log( LOG_ERR, "msspi: failed to disable revocation checks" );
+        return 0;
+    }
+
+    if( c->opt->cipher_list )
+        msspi_set_cipherlist( c->msh, (const uint8_t *)c->opt->cipher_list, strlen( c->opt->cipher_list ) );
+
+    if( c->opt->option.client )
+        msspi_set_cert_cb( c->msh, stunnel_msspi_cert_cb );
+    else if( !msspi_load_own_certs( c ) )
+        return 0;
+
+    return 1;
+}
+
+NOEXPORT void msspi_start_new(CLI *c) {
+#ifdef USE_DTLS
+    if( c->msh )
+    {
+        /* the accept loop opened it for the cookie exchange, and this peer
+           has a socket of its own now */
+        c->rfd = c->wfd = c->local_rfd.fd;
+        return;
+    }
+#endif /* USE_DTLS */
+
+    if( !msspi_session_open( c ) )
+        throw_exception( c, 1 );
+}
+
+#ifdef USE_DTLS
+
+/* The cookie exchange, keeping nothing for a peer that cannot echo the cookie
+   back: a context is given the ClientHello and closed again when all it
+   produces is a HelloVerifyRequest.  The cookie belongs to the SSP, so a later
+   context verifies what this one issued.  DTLSv1_listen() does the same for
+   OpenSSL, and like it this runs in the accept loop and must not throw. */
+int dtls_cookie_probe(CLI *c, SOCKET fd) {
+    c->rfd = c->wfd = fd;
+    c->flag.udp_listening = 1;
+    c->flag.udp_hello_verify = 0;
+    c->flag.udp_unproven = 1;
+
+    if( !msspi_session_open( c ) ) {
+        c->flag.udp_listening = 0;
+        if( c->msh )
+            ssl_close( c );
+        return 0;
+    }
+
+    msspi_accept( c->msh );
+    c->flag.udp_listening = 0;
+
+    if( !c->flag.udp_hello_verify && !( msspi_state( c->msh ) & MSSPI_ERROR ) )
+        return 1; /* on TIMEOUTcookie until a ServerHello says otherwise */
+
+    s_log(LOG_DEBUG, "DTLS: cookie sent, no session started");
+    ssl_close( c );
+    return 0;
+}
+
+#endif /* USE_DTLS */
+
 /* initialize and run the TLS/DTLS handshake */
 NOEXPORT void ssl_start(CLI *c) {
-    BIO *udp_bio=NULL;
-
-    /* initialize SSL object */
-    if(c->ssl) {
-        /* DTLS server: c->ssl was pre-initialized by dtls_listen().
-         * If udp_preload_bio was filled by drain_udp_datagrams()
-         * (same-peer ClientHello fragments), splice it in as the
-         * SSL read BIO via set_preload_bio(). */
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-        if(c->udp_preload_bio)
-            udp_bio=set_preload_bio(c);
-#endif /* USE_DTLS && OpenSSL version >= 1.1.0 */
-    } else {
-        ssl_start_new(c);
-    }
+    msspi_start_new(c);
 
     if(c->opt->option.require_cert)
         s_log(LOG_INFO, "Peer certificate required");
     else
         s_log(LOG_INFO, "Peer certificate not required");
 
-    ssl_handshake_loop(c, udp_bio);
+    ssl_handshake_loop(c);
 
     ssl_start_finish(c);
 }
 
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-/* DTLS server-only: splice udp_preload_bio (filled by
- * drain_udp_datagrams() with same-peer ClientHello fragments)
- * in as the SSL read BIO, preserving the existing socket BIO
- * for later restoration in ssl_handshake_loop(). */
-NOEXPORT BIO *set_preload_bio(CLI *c) {
-    BIO *udp_bio;
-
-    udp_bio=SSL_get_rbio(c->ssl);
-    if(!udp_bio) {
-        s_log(LOG_ERR, "DTLS: SSL_get_rbio() failed");
-        throw_exception(c, 1);
-    }
-    if(!BIO_up_ref(udp_bio)) {
-        s_log(LOG_ERR, "DTLS: BIO_up_ref() failed");
-        throw_exception(c, 1);
-    }
-
-    SSL_set0_rbio(c->ssl, c->udp_preload_bio);
-    c->udp_preload_bio=NULL;
-    s_log(LOG_DEBUG, "DTLS: preloaded ClientHello fragments");
-    return udp_bio;
-}
-#endif /* USE_DTLS && OpenSSL version >= 1.1.0 */
-
-/* initialize a c->ssl */
-NOEXPORT void ssl_start_new(CLI *c) {
-    c->ssl=SSL_new(c->opt->ctx);
-    if(!c->ssl) {
-        ssl_error(c, "SSL_new");
-        throw_exception(c, 1);
-    }
-    /* for callbacks */
-    if(!SSL_set_ex_data(c->ssl, index_ssl_cli, c)) {
-        ssl_error(c, "SSL_set_ex_data");
-        throw_exception(c, 1);
-    }
-
-    if(c->opt->option.client)
-        ssl_init_client(c);
-    else
-        ssl_init_server(c);
+/* drive the pseudo-blocking TLS/DTLS handshake */
+NOEXPORT void ssl_handshake_loop(CLI *c) {
+    /* TIMEOUThandshake bounds the whole handshake.  A peer that has not
+       answered our cookie has not shown that it receives at the address it
+       claims, so until the provider answers it the shorter TIMEOUTcookie
+       applies. */
+    int unproven=c->flag.udp_unproven && c->opt->timeout_cookie;
+    time_t now=time(NULL);
+    time_t limit=now+(c->opt->timeout_handshake ?
+        c->opt->timeout_handshake : c->opt->timeout_busy);
+    time_t deadline=unproven && now+c->opt->timeout_cookie<limit ?
+        now+c->opt->timeout_cookie : limit;
 
 #ifdef USE_DTLS
-    /* DTLS server: pseudo-blocking accept with ClientHello preload
-     * support.  See dtls_accept() in network.c for details. */
-    if(socket_type_is_datagram(c->opt->sock_type) &&
-            !c->opt->option.client)
-        dtls_accept(c);
+    if(socket_type_is_datagram(c->opt->sock_type))
+        c->handshake_deadline=deadline;
 #endif /* USE_DTLS */
-}
-
-/* configure client-side TLS state */
-NOEXPORT void ssl_init_client(CLI *c) {
-#ifndef OPENSSL_NO_TLSEXT
-#ifndef OPENSSL_NO_OCSP
-    if(!SSL_set_tlsext_status_type(c->ssl, TLSEXT_STATUSTYPE_ocsp)) {
-        ssl_error(c, "OCSP: SSL_set_tlsext_status_type");
-        throw_exception(c, 1);
-    }
-#endif /* !defined(OPENSSL_NO_OCSP) */
-    /* c->opt->sni should always be initialized at this point,
-     * either explicitly with "sni"
-     * or implicitly with "protocolHost" or "connect" */
-    if(c->opt->sni && *c->opt->sni) {
-        s_log(LOG_INFO, "SNI: sending servername: %s", c->opt->sni);
-        if(!SSL_set_tlsext_host_name(c->ssl, c->opt->sni)) {
-            ssl_error(c, "SSL_set_tlsext_host_name");
-            throw_exception(c, 1);
-        }
-    } else { /* c->opt->sni was set to an empty value */
-        s_log(LOG_INFO, "SNI: extension disabled");
-    }
-#endif /* !defined(OPENSSL_NO_TLSEXT) */
-    session_cache_retrieve(c);
-    if(!SSL_set_fd(c->ssl, (int)c->remote_fd.fd)) {
-        ssl_error(c, "SSL_set_fd");
-        throw_exception(c, 1);
-    }
-    SSL_set_connect_state(c->ssl);
-}
-
-/* configure server-side TLS state */
-NOEXPORT void ssl_init_server(CLI *c) {
-    if(c->local_rfd.fd==c->local_wfd.fd) {
-        if(!SSL_set_fd(c->ssl, (int)c->local_rfd.fd)) {
-            ssl_error(c, "SSL_set_fd");
-            throw_exception(c, 1);
-        }
-    } else {
-        /* does it make sense to have TLS on STDIN/STDOUT? */
-        if(!SSL_set_rfd(c->ssl, (int)c->local_rfd.fd)) {
-            ssl_error(c, "SSL_set_rfd");
-            throw_exception(c, 1);
-        }
-        if(!SSL_set_wfd(c->ssl, (int)c->local_wfd.fd)) {
-            ssl_error(c, "SSL_set_wfd");
-            throw_exception(c, 1);
-        }
-    }
-    SSL_set_accept_state(c->ssl);
-}
-
-/* drive the pseudo-blocking TLS/DTLS handshake */
-NOEXPORT void ssl_handshake_loop(CLI *c, BIO *udp_bio) {
-#if !defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-    (void)udp_bio; /* squash the unused parameter warning */
-#endif /* !defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L */
 
     while(1) {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
@@ -723,43 +1612,57 @@ NOEXPORT void ssl_handshake_loop(CLI *c, BIO *udp_bio) {
          * alternative solution is to disable internal session caching     *
          * NOTE: this critical section also covers callbacks (e.g. OCSP)   */
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-        (void)udp_bio; /* squash the unused parameter warning */
         if(unsafe_openssl)
             lock=s_write_lock(LOCK_SSL);
 #endif /* OpenSSL version < 1.1.0 */
 
-        i=c->opt->option.client ? SSL_connect(c->ssl) : SSL_accept(c->ssl);
+        i=c->opt->option.client ? ssl_connect(c) : ssl_accept(c);
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
         if(unsafe_openssl)
             s_unlock(lock);
 #endif /* OpenSSL version < 1.1.0 */
 
-        err=SSL_get_error(c->ssl, i);
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-        if(udp_bio) {
-            SSL_set0_rbio(c->ssl, udp_bio);
-            udp_bio=NULL;
+        if(unproven && !c->flag.udp_unproven) { /* answered: the leash comes off */
+            unproven=0;
+            deadline=limit;
+#ifdef USE_DTLS
+            c->handshake_deadline=deadline;
+#endif /* USE_DTLS */
         }
-#endif /* USE_DTLS && OpenSSL version >= 1.1.0 */
 
-        if(err==SSL_ERROR_NONE)
+        /* nothing to work out from the handle: we stopped this handshake
+           ourselves and said why where we found out */
+        if(i!=1 && c->msspi_cert_aborted)
+            throw_exception(c, 1);
+
+        err=ssl_get_error(c, i);
+        if(err==SSL_ERROR_NONE) {
+#ifdef USE_DTLS
+            c->handshake_deadline=0; /* the transfer has timeouts of its own */
+#endif /* USE_DTLS */
             break; /* ok -> done */
-        if(err==SSL_ERROR_WANT_READ || err==SSL_ERROR_WANT_WRITE
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x30000000L
-                /* DTLS may see ZERO_RETURN when a retransmit
-                 * close_notify arrives during handshake;
-                 * retry so DTLSv1_handle_timeout() can recover.
-                 * TCP: peer closed — fall through to the error
-                 * handler to log the real cause (e.g. OCSP). */
-                || (err==SSL_ERROR_ZERO_RETURN &&
-                    socket_type_is_datagram(c->opt->sock_type))
-#endif
-                ) {
+        }
+        if(err==SSL_ERROR_WANT_READ || err==SSL_ERROR_WANT_WRITE) {
             ssl_handshake_poll(c,
                 err==SSL_ERROR_WANT_READ,
-                err==SSL_ERROR_WANT_WRITE);
+                err==SSL_ERROR_WANT_WRITE, deadline);
             continue; /* ok -> retry */
+        }
+        if( c->msh && err == SSL_ERROR_SYSCALL )
+        {
+            DWORD dwLastError = msspi_last_error();
+            s_log( LOG_ERR, "msspi: %s error = 0x%08X", c->opt->option.client ? "connect" : "accept", dwLastError );
+            switch( dwLastError )
+            {
+                case 0x80090307L: /* SEC_E_CANNOT_INSTALL */
+                    s_log( LOG_ERR, "msspi: CryptoPro TLS server license not found" );
+                    break;
+                default:
+                    break;
+            }
+
+            throw_exception( c, 1 );
         }
         if(err==SSL_ERROR_SYSCALL) {
             switch(get_last_socket_error()) {
@@ -776,71 +1679,61 @@ NOEXPORT void ssl_handshake_loop(CLI *c, BIO *udp_bio) {
         ssl_error(c, c->opt->option.client ? "SSL_connect" : "SSL_accept");
         throw_exception(c, 1);
     }
-    ERR_clear_error(); /* silence any cached errors */
 }
 
 /* poll helper for ssl_handshake_loop() */
-NOEXPORT void ssl_handshake_poll(CLI *c, int rd, int wr) {
+NOEXPORT void ssl_handshake_poll(CLI *c, int rd, int wr, time_t deadline) {
     int poll_sec, poll_msec;
+    time_t left;
 
     s_poll_init(c->fds, 0);
     s_poll_add(c->fds, c->ssl_rfd->fd, rd, wr);
 
+    /* The deadline bounds the handshake as a whole, so it is checked before
+     * every wait: a peer that keeps the socket readable without letting the
+     * handshake progress must not hold the session either. */
+    left=deadline-time(NULL);
+    if(left<=0) {
+        s_log(LOG_INFO, "ssl_handshake_poll:"
+            " the handshake ran out of time: sending reset");
+        s_poll_dump(c->fds, LOG_DEBUG);
+        throw_exception(c, 1);
+    }
+    poll_sec=(int)left;
+    poll_msec=0;
+
 #ifdef USE_DTLS
     if(socket_type_is_datagram(c->opt->sock_type)) { /* UDP */
-        struct timeval dtls_timeout;
+        size_t due;
 
-        /* DTLS over UDP: lost handshake flights must be
-         * retransmitted.  Query OpenSSL for the next
-         * retransmission deadline instead of using the
-         * fixed timeout_busy. */
-        if(DTLSv1_get_timeout(c->ssl, &dtls_timeout)) {
-            poll_sec=(int)dtls_timeout.tv_sec;
-            poll_msec=(int)dtls_timeout.tv_usec/1000;
-            /* cap to timeout_busy so a single DTLS
-             * backoff cycle (up to 60 s) cannot block
-             * longer than the configured limit */
-            if(poll_sec>c->opt->timeout_busy ||
-                    (poll_sec==c->opt->timeout_busy &&
-                    poll_msec>0)) {
-                poll_sec=c->opt->timeout_busy;
-                poll_msec=0;
-            }
-        } else {
-            poll_sec=c->opt->timeout_busy;
-            poll_msec=0;
+        /* DTLS over UDP: a lost handshake flight has to go again, and msspi
+         * knows when the outstanding one is due.  Wait for whichever comes
+         * first, the flight falling due or the handshake running out. */
+        if(msspi_dtls_get_timeout(c->msh, &due) &&
+                (time_t)(due/1000)<left) {
+            poll_sec=(int)(due/1000);
+            poll_msec=(int)(due%1000);
         }
-    } else
-#endif /* USE_DTLS */
-    { /* TCP */
-        poll_sec=c->opt->timeout_busy;
-        poll_msec=0;
     }
+#endif /* USE_DTLS */
 
     switch(s_poll_wait(c->fds, poll_sec, poll_msec)) {
     case -1:
         sockerror("ssl_handshake_poll: s_poll_wait");
         throw_exception(c, 1);
     case 0:
-#ifdef USE_DTLS
-        if(socket_type_is_datagram(c->opt->sock_type)) {
-            /* DTLS timer expired: trigger retransmission,
-             * then retry SSL_connect/SSL_accept.
-             * DTLS has its own bounded retry limit
-             * (exponential backoff: 1 s, 2 s, 4 s, …)
-             * so this does not loop forever even when
-             * the peer is dead. */
-            if(DTLSv1_handle_timeout(c->ssl)<0)
-                ssl_error(c,
-                    "DTLSv1_handle_timeout");
-        } else
-#endif /* USE_DTLS */
-        {
+        if(time(NULL)>=deadline) {
             s_log(LOG_INFO, "ssl_handshake_poll: s_poll_wait:"
-                " TIMEOUTbusy exceeded: sending reset");
+                " the handshake ran out of time: sending reset");
             s_poll_dump(c->fds, LOG_DEBUG);
             throw_exception(c, 1);
         }
+#ifdef USE_DTLS
+        /* the flight is due: ask for it again, then retry the handshake */
+        if(socket_type_is_datagram(c->opt->sock_type) &&
+                !msspi_dtls_retransmit(c->msh))
+            s_log(LOG_DEBUG, "msspi: retransmission not applicable");
+#endif /* USE_DTLS */
         break;
     case 1:
         break; /* OK */
@@ -853,180 +1746,24 @@ NOEXPORT void ssl_handshake_poll(CLI *c, int rd, int wr) {
 
 /* finalize negotiated session state */
 NOEXPORT void ssl_start_finish(CLI *c) {
-    SSL_SESSION *sess;
+    if( c->opt->log_level >= LOG_INFO )
+    {
+        const SecPkgContext_CipherInfo * cipherinfo = NULL;
+        msspi_get_cipherinfo( c->msh, &cipherinfo );
 
-    print_cipher(c);
-    sess=SSL_get1_session(c->ssl);
-    if(sess) {
-        X509 *peer_cert=SSL_get_peer_certificate(c->ssl);
-        if(peer_cert) {
-            X509_free(peer_cert);
-        } else { /* no authentication was performed */
-            if(!SSL_SESSION_set_ex_data(sess,
-                    index_session_authenticated, NULL)) {
-                ssl_error(c, "SSL_SESSION_set_ex_data");
-                SSL_SESSION_free(sess);
-                throw_exception(c, 1);
-            }
-        }
-        if(SSL_session_reused(c->ssl)) {
-            /* otherwise printed from sess_new_cb() */
-            print_session_id("Session id", sess);
-        } else { /* a new session was negotiated */
-            /* SSL_SESS_CACHE_NO_INTERNAL_STORE prevented automatic caching */
-            if(!c->opt->option.client) {
-                int cache_result;
-
-                cache_result=SSL_CTX_add_session(c->opt->ctx, sess);
-                if(!cache_result)
-                    ssl_error(c, "SSL_CTX_add_session");
-            }
-        }
-        SSL_SESSION_free(sess);
-    } else if(c->opt->redirect_addr.names) {
-        s_log(LOG_ERR, "No session available for redirection");
-        throw_exception(c, 1);
-    } else {
-        /* no session is needed when redirection is disabled */
-    }
-    c->flag.redirect=(unsigned)redirect(c)&1U;
-}
-
-NOEXPORT void session_cache_retrieve(CLI *c) {
-    SSL_SESSION *sess=NULL;
-    CRYPTO_RWLOCK *lock;
-
-    lock=s_read_lock(LOCK_SESSION);
-    if(c->opt->connect_session) /* per-destination client session */
-        sess=c->opt->connect_session[c->idx];
-    if(!sess) /* either no per-destination cache or no session cached */
-        sess=c->opt->session; /* fallback session */
-    if(sess) {
-        int session_result;
-
-        session_result=SSL_set_session(c->ssl, sess);
-        if(!session_result) {
-            s_unlock(lock);
-            ssl_error(c, "SSL_set_session");
-            throw_exception(c, 1);
-        }
-    }
-    s_unlock(lock);
-
-    if(sess)
-        print_session_id("Attempting to resume", sess);
-    else
-        s_log(LOG_DEBUG, "No previous session to resume");
-}
-
-#if OPENSSL_VERSION_NUMBER >= 0x10101000L
-NOEXPORT void print_tmp_key(SSL *s) {
-    EVP_PKEY *key;
-    long tmp_key_found;
-
-#ifdef SSL_CTRL_GET_PEER_TMP_KEY
-    tmp_key_found=SSL_get_peer_tmp_key(s, &key);
-#else
-    tmp_key_found=SSL_get_server_tmp_key(s, &key);
-#endif
-    if(!tmp_key_found) {
-        s_log(LOG_INFO, "No peer temporary key received");
-#if OPENSSL_VERSION_NUMBER>=0x30000000L
-        if(SSL_version(s) == TLS1_3_VERSION) {
-            s_log(LOG_INFO, "Negotiated TLSv1.3 group: %s",
-                SSL_group_to_name(s, (int)SSL_get_negotiated_group(s)));
-        }
-#endif /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-        return;
-    }
-    switch(EVP_PKEY_id(key)) {
-#if OPENSSL_VERSION_NUMBER>=0x30000000L
-    case EVP_PKEY_KEYMGMT:
+        if( !cipherinfo )
         {
-            const char *keyname=EVP_PKEY_get0_type_name(key);
-
-            if(keyname)
-                s_log(LOG_INFO, "Peer temporary key: %s, %d bits",
-                    keyname, EVP_PKEY_bits(key));
-            else
-                s_log(LOG_INFO, "Unable to determine temporary key type");
+            s_log( LOG_ERR, "msspi: get_cipherinfo failed" );
+            throw_exception( c, 1 );
         }
-        break;
-#endif /* OPENSSL_VERSION_NUMBER>=0x30000000L */
-    case EVP_PKEY_RSA:
-        s_log(LOG_INFO, "Peer temporary key: RSA, %d bits", EVP_PKEY_bits(key));
-        break;
-    case EVP_PKEY_DH:
-        s_log(LOG_INFO, "Peer temporary key: DH, %d bits", EVP_PKEY_bits(key));
-        break;
-#ifndef OPENSSL_NO_EC
-    case EVP_PKEY_EC:
-        {
-            EC_KEY *ec=EVP_PKEY_get1_EC_KEY(key);
-            int nid=EC_GROUP_get_curve_name(EC_KEY_get0_group(ec));
-            const char *cname=EC_curve_nid2nist(nid);
 
-            EC_KEY_free(ec);
-            if (cname == NULL)
-                cname=OBJ_nid2sn(nid);
-            s_log(LOG_INFO, "Peer temporary key: ECDH, %s, %d bits", cname, EVP_PKEY_bits(key));
-        }
-        break;
-#endif
-    default:
-        {
-            int keyid=EVP_PKEY_id(key);
-
-            if(keyid != NID_undef)
-                s_log(LOG_INFO, "Peer temporary key: %s, %d bits",
-                    OBJ_nid2sn(keyid), EVP_PKEY_bits(key));
-            else
-                s_log(LOG_INFO, "Unable to determine temporary key type");
-        }
+        s_log( LOG_INFO, "msspi: %s %s (%04X)", SSL_get_version_msspi( c->msh ),
+               c->opt->option.client ? "connected" : "accepted",
+               cipherinfo->dwCipherSuite );
     }
-    EVP_PKEY_free(key);
-}
-#endif /* OpenSSL 1.1.1 or later */
 
-NOEXPORT void print_cipher(CLI *c) { /* print negotiated cipher */
-    const SSL_CIPHER *cipher;
-#ifndef OPENSSL_NO_COMP
-    const COMP_METHOD *compression, *expansion;
-#endif
-
-    if(c->opt->log_level<LOG_INFO) /* performance optimization */
-        return;
-
-#ifndef OPENSSL_NO_PSK
-    if(c->flag.psk_found) {
-        if(c->opt->option.client) {
-            s_log(LOG_ERR, "INTERNAL ERROR: PSK found on a client");
-        } else {
-            s_log(LOG_INFO, "TLS accepted: PSK");
-        }
-    } else
-#endif /* !defined(OPENSSL_NO_PSK) */
-        s_log(LOG_INFO, "TLS %s: %s",
-            c->opt->option.client ? "connected" : "accepted",
-            SSL_session_reused(c->ssl) ?
-                "previous session reused" : "new session negotiated");
-
-    cipher=SSL_get_current_cipher(c->ssl);
-    s_log(LOG_INFO, "%s ciphersuite: %s (%d-bit encryption)",
-        SSL_get_version(c->ssl), SSL_CIPHER_get_name(cipher),
-        SSL_CIPHER_get_bits(cipher, NULL));
-#if OPENSSL_VERSION_NUMBER >= 0x10101000L
-    print_tmp_key(c->ssl);
-#endif
-
-#ifndef OPENSSL_NO_COMP
-    compression=SSL_get_current_compression(c->ssl);
-    expansion=SSL_get_current_expansion(c->ssl);
-    s_log(compression||expansion ? LOG_INFO : LOG_DEBUG,
-        "Compression: %s, expansion: %s",
-        compression ? SSL_COMP_get_name(compression) : "null",
-        expansion ? SSL_COMP_get_name(expansion) : "null");
-#endif
+    if( !c->msspi_peer_verified && !msspi_verify_peer( c ) )
+        throw_exception( c, 1 );
 }
 
 /****************************** transfer TCP data */
@@ -1056,12 +1793,10 @@ NOEXPORT void transfer_tcp(CLI *c) {
 
     do { /* main loop of client data transfer */
         /****************************** initialize *_wants_* */
-        if(!(SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN) &&
-                c->ssl_ptr<(size_t)BUFFSIZE && !read_wants_write)
-            read_wants_read=1;
-        if(!(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) &&
-                c->sock_ptr && !write_wants_read)
-            write_wants_write=1;
+        read_wants_read|=!(ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN)
+            && c->ssl_ptr<BUFFSIZE && !read_wants_write;
+        write_wants_write|=!(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN)
+            && c->sock_ptr && !write_wants_read;
 
         /****************************** setup c->fds structure */
         s_poll_init(c->fds, 0); /* initialize the structure */
@@ -1076,7 +1811,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
         if(sock_open_wr) /* always watch HUP/ERR on a socket open for write */
             s_poll_add(c->fds, c->sock_wfd->fd, 0, c->ssl_ptr>0U);
         /* poll TLS file descriptors unless TLS shutdown was completed */
-        if(SSL_get_shutdown(c->ssl)!=
+        if(ssl_get_shutdown(c)!=
                 (SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN)) {
             s_poll_add(c->fds, c->ssl_rfd->fd,
                 read_wants_read || write_wants_read || shutdown_wants_read, 0);
@@ -1085,18 +1820,17 @@ NOEXPORT void transfer_tcp(CLI *c) {
         }
 
         /****************************** wait for an event */
-        pending=SSL_pending(c->ssl);
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
+        pending=ssl_pending(c);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
         /* only attempt to process SSL_has_pending() data once */
         prev_has_pending=has_pending;
-        has_pending=SSL_has_pending(c->ssl);
-        if(has_pending && !prev_has_pending)
-            pending=1;
+        has_pending=ssl_has_pending(c);
+        pending=pending || (has_pending && !prev_has_pending);
 #endif
         if(read_wants_read && pending) {
             timeout=0; /* process any buffered data without delay */
         } else if((sock_open_rd && /* both peers open */
-                !(SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN)) ||
+                !(ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN)) ||
                 c->ssl_ptr /* data buffered to write to socket */ ||
                 c->sock_ptr /* data buffered to write to TLS */) {
             timeout=c->opt->timeout_idle;
@@ -1112,7 +1846,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
             if(read_wants_read && pending)
                 break;
             if((sock_open_rd &&
-                    !(SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN)) ||
+                    !(ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN)) ||
                     c->ssl_ptr || c->sock_ptr) {
                 s_log(LOG_INFO, "transfer_tcp: s_poll_wait:"
                     " TIMEOUTidle exceeded: sending reset");
@@ -1178,7 +1912,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
                     throw_exception(c, 1); /* reset the sockets */
                 }
                 s_log(LOG_INFO, "TLS socket closed (HUP)");
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
             }
         }
@@ -1245,20 +1979,18 @@ NOEXPORT void transfer_tcp(CLI *c) {
 
         /****************************** update *_wants_* based on new *_ptr */
         /* this update is also required for SSL_pending() to be used */
-        if(!(SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN) &&
-                c->ssl_ptr<(size_t)BUFFSIZE && !read_wants_write)
-            read_wants_read=1;
-        if(!(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) &&
-                c->sock_ptr && !write_wants_read)
-            write_wants_write=1;
+        read_wants_read|=!(ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN)
+            && c->ssl_ptr<BUFFSIZE && !read_wants_write;
+        write_wants_write|=!(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN)
+            && c->sock_ptr && !write_wants_read;
 
         /****************************** write to TLS */
         if((write_wants_read && ssl_can_rd) ||
                 (write_wants_write && ssl_can_wr)) {
-            int num=SSL_write(c->ssl, c->sock_buff, (int)(c->sock_ptr));
+            int num=ssl_write(c, c->sock_buff, (int)(c->sock_ptr));
             write_wants_read=0;
             write_wants_write=0;
-            switch(err=SSL_get_error(c->ssl, num)) {
+            switch(err=ssl_get_error(c, num)) {
             case SSL_ERROR_NONE:
                 if(num==0) { /* nothing was written: ignore */
                     s_log(LOG_DEBUG, "SSL_write returned 0");
@@ -1300,7 +2032,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
                     throw_exception(c, 1); /* reset the sockets */
                 }
                 s_log(LOG_INFO, "TLS socket closed (SSL_write)");
-                SSL_set_shutdown(c->ssl, SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
+                ssl_set_shutdown(c, SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break;
             default:
                 s_log(LOG_ERR, "SSL_write/SSL_get_error returned %d", err);
@@ -1314,12 +2046,10 @@ NOEXPORT void transfer_tcp(CLI *c) {
                  * writesocket() above made some room in c->ssl_buff */
                 (read_wants_write && ssl_can_wr)) {
             size_t available=(size_t)BUFFSIZE-c->ssl_ptr;
-            int read_len=(int)available;
-            int num=SSL_read(c->ssl, c->ssl_buff+c->ssl_ptr, read_len);
-
+            int num=ssl_read(c, c->ssl_buff+c->ssl_ptr, (int)available);
             read_wants_read=0;
             read_wants_write=0;
-            switch(err=SSL_get_error(c->ssl, num)) {
+            switch(err=ssl_get_error(c, num)) {
             case SSL_ERROR_NONE:
                 if(num==0) { /* nothing was read: ignore */
                     s_log(LOG_DEBUG, "SSL_read returned 0");
@@ -1356,7 +2086,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
                         throw_exception(c, 1); /* reset the sockets */
                     }
                     s_log(LOG_INFO, "TLS socket closed (SSL_read)");
-                    SSL_set_shutdown(c->ssl,
+                    ssl_set_shutdown(c,
                         SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                     break;
                 }
@@ -1365,8 +2095,8 @@ NOEXPORT void transfer_tcp(CLI *c) {
                 throw_exception(c, 1);
             case SSL_ERROR_ZERO_RETURN: /* received a close_notify alert */
                 s_log(LOG_INFO, "TLS closed (SSL_read)");
-                if(SSL_version(c->ssl)==SSL2_VERSION)
-                    SSL_set_shutdown(c->ssl,
+                if(ssl_version(c)==SSL2_VERSION)
+                    ssl_set_shutdown(c,
                         SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break;
             case SSL_ERROR_SYSCALL:
@@ -1381,7 +2111,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
                     throw_exception(c, 1); /* reset the sockets */
                 }
                 s_log(LOG_INFO, "TLS socket closed (SSL_read)");
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break;
             default:
@@ -1416,23 +2146,16 @@ NOEXPORT void transfer_tcp(CLI *c) {
             sock_open_wr=0;
         }
         /* SSL_read() must be the last ssl_rfd operation before FIONREAD */
-        if(!(SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN) &&
-                s_poll_rdhup(c->fds, c->ssl_rfd->fd)) {
-            /* MISRA deviation: Winsock FIONREAD uses a character shift
-             * and mixed signed masks to encode the platform command. */
-            /* cppcheck-suppress [misra-c2012-10.1, misra-c2012-10.4, misra-c2012-12.2] */
-            int fionread_failed=ioctlsocket(c->ssl_rfd->fd, FIONREAD,
-                &bytes);
-
-            if(fionread_failed || !bytes) {
-                /* hangup -> buggy (e.g. Microsoft) peer:
-                 * TLS socket closed without close_notify alert */
-                s_log(LOG_INFO, "TLS socket closed (read hangup)");
-                SSL_set_shutdown(c->ssl,
-                    SSL_get_shutdown(c->ssl)|SSL_RECEIVED_SHUTDOWN);
-            }
+        if(!(ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN) &&
+                s_poll_rdhup(c->fds, c->ssl_rfd->fd) &&
+                (ioctlsocket(c->ssl_rfd->fd, FIONREAD, &bytes) || !bytes)) {
+            /* hangup -> buggy (e.g. Microsoft) peer:
+             * TLS socket closed without close_notify alert */
+            s_log(LOG_INFO, "TLS socket closed (read hangup)");
+            ssl_set_shutdown(c,
+                ssl_get_shutdown(c)|SSL_RECEIVED_SHUTDOWN);
         }
-        if(!(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) &&
+        if(!(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN) &&
                 s_poll_hup(c->fds, c->ssl_wfd->fd)) {
             if(c->sock_ptr || write_wants_write) {
                 s_log(LOG_ERR,
@@ -1441,12 +2164,12 @@ NOEXPORT void transfer_tcp(CLI *c) {
                 throw_exception(c, 1); /* reset the sockets */
             }
             s_log(LOG_INFO, "TLS socket closed (write hangup)");
-            SSL_set_shutdown(c->ssl,
-                SSL_get_shutdown(c->ssl)|SSL_SENT_SHUTDOWN);
+            ssl_set_shutdown(c,
+                ssl_get_shutdown(c)|SSL_SENT_SHUTDOWN);
         }
 
         /****************************** check write shutdown conditions */
-        if(sock_open_wr && SSL_get_shutdown(c->ssl)&SSL_RECEIVED_SHUTDOWN &&
+        if(sock_open_wr && ssl_get_shutdown(c)&SSL_RECEIVED_SHUTDOWN &&
                 !c->ssl_ptr) {
             sock_open_wr=0; /* no further write allowed */
             if(!c->sock_wfd->is_socket) {
@@ -1459,9 +2182,9 @@ NOEXPORT void transfer_tcp(CLI *c) {
                 sock_open_rd=0; /* file descriptor is ready to be closed */
             }
         }
-        if(!(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) && !sock_open_rd &&
+        if(!(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN) && !sock_open_rd &&
                 !c->sock_ptr && !write_wants_write) {
-            if(SSL_version(c->ssl)!=SSL2_VERSION) {
+            if(ssl_version(c)!=SSL2_VERSION) {
                 s_log(LOG_DEBUG, "Sending close_notify alert");
                 shutdown_wants_write=1;
             } else { /* no alerts in SSLv2, including the close_notify alert */
@@ -1471,7 +2194,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
                 if(c->ssl_wfd->is_socket)
                     (void)shutdown(c->ssl_wfd->fd, SHUT_WR); /* send TCP FIN */
                 /* notify the OpenSSL library */
-                SSL_set_shutdown(c->ssl, SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
+                ssl_set_shutdown(c, SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
             }
         }
 
@@ -1484,17 +2207,17 @@ NOEXPORT void transfer_tcp(CLI *c) {
             stunnel_info(LOG_ERR);
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
             s_log(LOG_ERR, "protocol=%s, SSL_pending=%d, SSL_has_pending=%d",
-                SSL_get_version(c->ssl),
-                SSL_pending(c->ssl), SSL_has_pending(c->ssl));
+                ssl_get_version(c),
+                ssl_pending(c), ssl_has_pending(c));
 #else
             s_log(LOG_ERR, "protocol=%s, SSL_pending=%d",
-                SSL_get_version(c->ssl), SSL_pending(c->ssl));
+                ssl_get_version(c), ssl_pending(c));
 #endif
             s_log(LOG_ERR, "sock_open_rd=%s, sock_open_wr=%s",
                 sock_open_rd ? "Y" : "n", sock_open_wr ? "Y" : "n");
             s_log(LOG_ERR, "SSL_RECEIVED_SHUTDOWN=%s, SSL_SENT_SHUTDOWN=%s",
-                (SSL_get_shutdown(c->ssl) & SSL_RECEIVED_SHUTDOWN) ? "Y" : "n",
-                (SSL_get_shutdown(c->ssl) & SSL_SENT_SHUTDOWN) ? "Y" : "n");
+                (ssl_get_shutdown(c) & SSL_RECEIVED_SHUTDOWN) ? "Y" : "n",
+                (ssl_get_shutdown(c) & SSL_SENT_SHUTDOWN) ? "Y" : "n");
             s_log(LOG_ERR, "sock_can_rd=%s, sock_can_wr=%s",
                 sock_can_rd ? "Y" : "n", sock_can_wr ? "Y" : "n");
             s_log(LOG_ERR, "sock_hup_rd=%s, sock_hup_wr=%s",
@@ -1519,7 +2242,7 @@ NOEXPORT void transfer_tcp(CLI *c) {
             throw_exception(c, 1);
         }
 
-    } while(sock_open_wr || !(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) ||
+    } while(sock_open_wr || !(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN) ||
         shutdown_wants_read || shutdown_wants_write);
 }
 
@@ -1527,17 +2250,17 @@ NOEXPORT void transfer_tcp(CLI *c) {
 /* return 1 if close_notify was sent, 0 to retry, and -1 on failure */
 NOEXPORT int ssl_shutdown_step(CLI *c, int *wants_read, int *wants_write,
         const char *caller) {
-    int num=SSL_shutdown(c->ssl);
+    int num=ssl_shutdown(c);
     int err;
 
     if(num<0)
-        err=SSL_get_error(c->ssl, num);
+        err=ssl_get_error(c, num);
     else
         err=SSL_ERROR_NONE;
     switch(err) {
     case SSL_ERROR_NONE:
         *wants_read=*wants_write=0;
-        if(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) {
+        if(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN) {
             s_log(LOG_INFO,
                 "SSL_shutdown successfully sent close_notify alert");
             return 1;
@@ -1559,14 +2282,14 @@ NOEXPORT int ssl_shutdown_step(CLI *c, int *wants_read, int *wants_write,
         ssl_error(c, "SSL_shutdown");
         throw_exception(c, 1);
     case SSL_ERROR_ZERO_RETURN:
-        SSL_set_shutdown(c->ssl,
+        ssl_set_shutdown(c,
             SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
         *wants_read=*wants_write=0;
         return -1;
     case SSL_ERROR_SYSCALL:
         if(socket_needs_retry(c, caller))
             return 0;
-        SSL_set_shutdown(c->ssl,
+        ssl_set_shutdown(c,
             SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
         *wants_read=*wants_write=0;
         return -1;
@@ -1619,7 +2342,7 @@ NOEXPORT void tls_read_close(CLI *c, const char *where) {
         throw_exception(c, 1);
     }
     s_log(LOG_INFO, "TLS socket closed (%s)", where);
-    SSL_set_shutdown(c->ssl,
+    ssl_set_shutdown(c,
         SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
 }
 
@@ -1639,24 +2362,6 @@ NOEXPORT void transfer_udp(CLI *c) {
      * by accept_connection() in DTLS client mode. */
     c->ssl_ptr=0;
 
-    /* Defensive: udp_preload_bio is filled by drain_udp_datagrams()
-     * for both client (plaintext payload) and server (DTLS fragments).
-     * Server mode must have consumed it via set_preload_bio() during
-     * ssl_start().  If a future code change leaks it here, free it
-     * to avoid feeding DTLS handshake fragments to the plaintext
-     * transfer path.  Client mode intentionally enters with a
-     * non-NULL BIO; the loop below drains it. */
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-    if(!c->opt->option.client && c->udp_preload_bio) {
-        s_log(LOG_WARNING,
-            "UDP: udp_preload_bio not consumed before transfer_udp()");
-        s_log(LOG_WARNING,
-            "UDP: discarding %d preloaded byte(s)",
-            (int)BIO_pending(c->udp_preload_bio));
-        (void)BIO_free(c->udp_preload_bio);
-        c->udp_preload_bio=NULL;
-    }
-#endif
     last_activity=time(NULL);
 
     do { /* main loop of client UDP data transfer */
@@ -1664,9 +2369,27 @@ NOEXPORT void transfer_udp(CLI *c) {
         int timeout;
         int err;
         int sock_can_rd, sock_can_wr, ssl_can_rd, ssl_can_wr;
-        const int shut=SSL_get_shutdown(c->ssl);
+        const int shut=ssl_get_shutdown(c);
         const int shut_complete=
             shut==(SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN) ? 1 : 0;
+
+        /****************************** read from preloaded datagrams */
+        /* A client's queue holds plaintext, and no socket event announces it:
+         * take a datagram from it before the interests are worked out, so the
+         * wait is over what is left rather than over what is already here.  A
+         * server's queue holds DTLS records, which the encrypted read
+         * callback takes instead. */
+#ifdef USE_DTLS
+        if(c->opt->option.client && !c->sock_ptr) {
+            size_t num=udp_preload_pop(c, c->sock_buff, BUFFSIZE);
+
+            if(num) {
+                c->sock_ptr=num;
+                last_activity=time(NULL);
+                watchdog=0;
+            }
+        }
+#endif /* USE_DTLS */
 
         /****************************** initialize *_wants_* */
         /* DTLS sends one record per datagram, but nonblocking OpenSSL
@@ -1726,17 +2449,23 @@ NOEXPORT void transfer_udp(CLI *c) {
 
         /****************************** wait for an event */
             if(tls_open) {
-                pending=SSL_pending(c->ssl);
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
+                pending=ssl_pending(c);
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
                 /* only attempt to process SSL_has_pending() data once */
                 prev_has_pending=has_pending;
-                has_pending=SSL_has_pending(c->ssl);
-                if(has_pending && !prev_has_pending)
-                    pending=1;
+                has_pending=ssl_has_pending(c);
+                pending=pending || (has_pending && !prev_has_pending);
 #endif
             } else {
                 pending=0;
             }
+#ifdef USE_DTLS
+            /* a server's queued records are read through the TLS side, and
+             * no socket event announces them */
+            if(!c->opt->option.client &&
+                    c->udp_preload_pos<c->udp_preload_count)
+                pending=1;
+#endif /* USE_DTLS */
             if((read_wants_read || write_wants_read) && pending)
                 timeout=0; /* process buffered DTLS data without delay */
             else
@@ -1794,7 +2523,7 @@ NOEXPORT void transfer_udp(CLI *c) {
             read_wants_read=read_wants_write=0;
             write_wants_read=write_wants_write=0;
             shutdown_wants_read=shutdown_wants_write=0;
-            SSL_set_shutdown(c->ssl,
+            ssl_set_shutdown(c,
                 SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
         }
 
@@ -1817,27 +2546,6 @@ NOEXPORT void transfer_udp(CLI *c) {
                 s_poll_dump(c->fds, LOG_DEBUG);
             }
         }
-
-        /****************************** read from preloaded datagrams */
-        /* Client mode: drain_udp_datagrams() may have queued same-peer
-         * plaintext datagrams in udp_preload_bio.  Consume one datagram
-         * before reading from the connected socket.  The dgram BIO
-         * preserves datagram boundaries set by BIO_write(). */
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x10100000L
-        if(!c->sock_ptr && c->udp_preload_bio) {
-            int num=BIO_read(c->udp_preload_bio,
-                c->sock_buff, BUFFSIZE);
-
-            if(num>0) {
-                c->sock_ptr=(size_t)num;
-                last_activity=time(NULL);
-                watchdog=0;
-            } else {
-                (void)BIO_free(c->udp_preload_bio);
-                c->udp_preload_bio=NULL;
-            }
-        }
-#endif /* USE_DTLS && OpenSSL version >= 1.1.0 */
 
         /****************************** read from socket (one datagram) */
         if(tls_open && sock_open && sock_can_rd && !c->sock_ptr) {
@@ -1895,9 +2603,9 @@ NOEXPORT void transfer_udp(CLI *c) {
         if(tls_open && c->sock_ptr &&
                 ((write_wants_read && (ssl_can_rd || pending)) ||
                 (write_wants_write && ssl_can_wr))) {
-            int num=SSL_write(c->ssl, c->sock_buff, (int)(c->sock_ptr));
+            int num=ssl_write(c, c->sock_buff, (int)(c->sock_ptr));
             write_wants_read=write_wants_write=0;
-            switch(err=SSL_get_error(c->ssl, num)) {
+            switch(err=ssl_get_error(c, num)) {
             case SSL_ERROR_NONE:
                 if(num>0) {
                     c->sock_ptr=0;
@@ -1933,7 +2641,7 @@ NOEXPORT void transfer_udp(CLI *c) {
                     throw_exception(c, 1);
                 }
                 s_log(LOG_INFO, "TLS socket closed (SSL_write)");
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break;
             default:
@@ -1946,9 +2654,9 @@ NOEXPORT void transfer_udp(CLI *c) {
         if(tls_open && sock_open && !c->ssl_ptr &&
                 ((read_wants_read && (ssl_can_rd || pending)) ||
                 (read_wants_write && ssl_can_wr))) {
-            int num=SSL_read(c->ssl, c->ssl_buff, (int)BUFFSIZE);
+            int num=ssl_read(c, c->ssl_buff, (int)BUFFSIZE);
             read_wants_read=read_wants_write=0;
-            switch(err=SSL_get_error(c->ssl, num)) {
+            switch(err=ssl_get_error(c, num)) {
             case SSL_ERROR_NONE:
                 if(num>0) {
                     c->ssl_ptr=(size_t)num;
@@ -1977,8 +2685,8 @@ NOEXPORT void transfer_udp(CLI *c) {
                 throw_exception(c, 1);
             case SSL_ERROR_ZERO_RETURN:
                 s_log(LOG_INFO, "DTLS closed (SSL_read)");
-                SSL_set_shutdown(c->ssl,
-                    SSL_get_shutdown(c->ssl)|SSL_RECEIVED_SHUTDOWN);
+                ssl_set_shutdown(c,
+                    ssl_get_shutdown(c)|SSL_RECEIVED_SHUTDOWN);
                 shutdown_wants_write=1;
                 break;
             case SSL_ERROR_SYSCALL:
@@ -2013,7 +2721,7 @@ NOEXPORT void transfer_udp(CLI *c) {
 
         /****************************** check write shutdown conditions */
         if(tls_open && !sock_open && !c->sock_ptr &&
-                !(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN) &&
+                !(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN) &&
                 !shutdown_wants_write) {
             s_log(LOG_DEBUG, "Sending close_notify alert");
             shutdown_wants_write=1;
@@ -2028,17 +2736,17 @@ NOEXPORT void transfer_udp(CLI *c) {
             stunnel_info(LOG_ERR);
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
             s_log(LOG_ERR, "protocol=%s, SSL_pending=%d, SSL_has_pending=%d",
-                SSL_get_version(c->ssl),
-                SSL_pending(c->ssl), SSL_has_pending(c->ssl));
+                ssl_get_version(c),
+                ssl_pending(c), ssl_has_pending(c));
 #else
             s_log(LOG_ERR, "protocol=%s, SSL_pending=%d",
-                SSL_get_version(c->ssl), SSL_pending(c->ssl));
+                ssl_get_version(c), ssl_pending(c));
 #endif
             s_log(LOG_ERR, "sock_open=%s, tls_open=%s",
                 sock_open ? "Y" : "n", tls_open ? "Y" : "n");
             s_log(LOG_ERR, "SSL_RECEIVED_SHUTDOWN=%s, SSL_SENT_SHUTDOWN=%s",
-                (SSL_get_shutdown(c->ssl) & SSL_RECEIVED_SHUTDOWN) ? "Y" : "n",
-                (SSL_get_shutdown(c->ssl) & SSL_SENT_SHUTDOWN) ? "Y" : "n");
+                (ssl_get_shutdown(c) & SSL_RECEIVED_SHUTDOWN) ? "Y" : "n",
+                (ssl_get_shutdown(c) & SSL_SENT_SHUTDOWN) ? "Y" : "n");
             s_log(LOG_ERR, "sock_can_rd=%s, sock_can_wr=%s",
                 sock_can_rd ? "Y" : "n", sock_can_wr ? "Y" : "n");
             s_log(LOG_ERR, "sock_hup_rd=%s, sock_hup_wr=%s",
@@ -2063,7 +2771,7 @@ NOEXPORT void transfer_udp(CLI *c) {
             throw_exception(c, 1);
         }
 
-    } while((tls_open && !(SSL_get_shutdown(c->ssl)&SSL_SENT_SHUTDOWN)) ||
+    } while((tls_open && !(ssl_get_shutdown(c)&SSL_SENT_SHUTDOWN)) ||
         (sock_open && c->ssl_ptr) || shutdown_wants_read ||
         shutdown_wants_write);
 }
@@ -2159,15 +2867,94 @@ NOEXPORT int connect_local(CLI *c) { /* spawn local process */
 
 #elif defined(USE_WIN32)
 
+char **env_alloc( CLI *c )
+{
+    char **env = NULL, **p;
+    unsigned n = 0; /* (n+2) keeps the list NULL-terminated */
+    char *name, host[40], port[6];
+    X509 *peer_cert;
+
+    if( !getnameinfo( &c->peer_addr.sa, c->peer_addr_len,
+                      host, 40, port, 6, NI_NUMERICHOST | NI_NUMERICSERV ) )
+    {
+        /* just don't set these variables if getnameinfo() fails */
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "REMOTE_HOST=%s", host );
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "REMOTE_PORT=%s", port );
+    }
+
+    if( !getnameinfo( &c->local_addr.sa, c->local_addr_len,
+                      host, 40, port, 6, NI_NUMERICHOST | NI_NUMERICSERV ) )
+    {
+        /* just don't set these variables if getnameinfo() fails */
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "LOCAL_HOST=%s", host );
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "LOCAL_PORT=%s", port );
+    }
+
+    if( c->msh )
+    {
+        const uint8_t * subject;
+        size_t slen;
+        const uint8_t * issuer;
+        size_t ilen;
+        if( msspi_get_peernames( c->msh, &subject, &slen, &issuer, &ilen ) )
+        {
+            env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+            env[n++] = str_printf( "SSL_CLIENT_DN=%s", (const char *)subject );
+            env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", (const char *)issuer );
+        }
+    }
+
+    {
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "SERVICENAME=%s", c->opt->servname );
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "CLIENTMODE=%d", c->opt->option.client );
+    }
+
+    for( p = environ; *p; ++p )
+    {
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_dup( *p );
+    }
+
+    return env;
+}
+
+void env_free( char **env )
+{
+    char **p;
+
+    for( p = env; *p; ++p )
+        str_free( *p );
+    str_free( env );
+}
+
 NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
     SOCKET fd[2];
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
     LPTSTR name, args;
 
+if( c->is_exec == 0 )
+{
     if(make_sockets(fd, c->opt->sock_type))
         throw_exception(c, 1);
-    (void)memset(&si, 0, sizeof si);
+    c->exec_fd = fd[1];
+    c->is_exec = 1;
+    return fd[0];
+}
+else
+{
+    fd[0] = INVALID_SOCKET;
+    fd[1] = c->exec_fd;
+    c->exec_fd = INVALID_SOCKET;
+}
+    memset(&si, 0, sizeof si);
     si.cb=sizeof si;
     si.dwFlags=STARTF_USESHOWWINDOW|STARTF_USESTDHANDLES;
     si.wShowWindow=SW_HIDE;
@@ -2179,13 +2966,37 @@ NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
 
     name=str2tstr(c->opt->exec_name);
     args=str2tstr(c->opt->exec_args);
-    if(!CreateProcess(name, args, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        ioerror("CreateProcess");
-        str_free(name);
-        str_free(args);
-        (void)closesocket(fd[0]);
-        (void)closesocket(fd[1]);
-        throw_exception(c, 1);
+    {
+        char ** env = env_alloc( c );
+        char ** p;
+        char * winenv = NULL;
+        size_t winlen = 0;
+        size_t shift = winlen;
+        BOOL created;
+
+        for( p = env; *p; ++p )
+        {
+            size_t plen = strlen( *p ) + 1;
+            winlen += plen;
+            winenv = str_realloc( winenv, winlen + 1 );
+            memcpy( winenv + shift, *p, plen );
+            shift = winlen;
+        }
+        winenv[shift] = 0;
+
+        created = CreateProcess( name, args, NULL, NULL, TRUE, 0, winenv, NULL, &si, &pi );
+
+        env_free( env );
+        str_free( winenv );
+
+        if( !created ) {
+            ioerror("CreateProcess");
+            str_free(name);
+            str_free(args);
+            closesocket(fd[0]);
+            closesocket(fd[1]);
+            throw_exception(c, 1);
+        }
     }
     str_free(name);
     str_free(args);
@@ -2198,6 +3009,10 @@ NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
 
 #else /* standard Unix version */
 
+#ifndef environ
+extern char **environ;
+#endif
+
 NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
     int fd[2], pid;
     char **env;
@@ -2205,6 +3020,8 @@ NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
     sigset_t newmask;
 #endif
 
+if( c->is_exec == 0 )
+{
     if(c->opt->option.pty) {
         char tty[64];
 
@@ -2216,6 +3033,16 @@ NOEXPORT SOCKET connect_local(CLI *c) { /* spawn local process */
             throw_exception(c, 1);
     }
     set_nonblock(fd[1], 0); /* switch back to the blocking mode */
+    c->exec_fd = fd[1];
+    c->is_exec = 1;
+    return fd[0];
+}
+else
+{
+    fd[0] = INVALID_SOCKET;
+    fd[1] = c->exec_fd;
+    c->exec_fd = INVALID_SOCKET;
+}
 
     env=env_alloc(c);
     pid=fork();
@@ -2329,19 +3156,36 @@ NOEXPORT char **env_alloc(CLI *c) {
         }
     }
 
-    if(c->ssl) {
-        peer_cert=SSL_get_peer_certificate(c->ssl);
-        if(peer_cert) {
-            name=X509_NAME2text(X509_get_subject_name(peer_cert));
-            env=str_realloc(env, (n+2U)*sizeof(char *));
-            env[n++]=str_printf("SSL_CLIENT_DN=%s", name);
-            str_free(name);
-            name=X509_NAME2text(X509_get_issuer_name(peer_cert));
-            env=str_realloc(env, (n+2U)*sizeof(char *));
-            env[n++]=str_printf("SSL_CLIENT_I_DN=%s", name);
-            str_free(name);
-            X509_free(peer_cert);
+    if( !getnameinfo( &c->local_addr.sa, c->local_addr_len,
+                      host, 40, port, 6, NI_NUMERICHOST | NI_NUMERICSERV ) )
+    {
+        /* just don't set these variables if getnameinfo() fails */
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "LOCAL_HOST=%s", host );
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "LOCAL_PORT=%s", port );
+    }
+
+    if( c->msh )
+    {
+        const uint8_t * subject;
+        size_t slen;
+        const uint8_t * issuer;
+        size_t ilen;
+        if( msspi_get_peernames( c->msh, &subject, &slen, &issuer, &ilen ) )
+        {
+            env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+            env[n++] = str_printf( "SSL_CLIENT_DN=%s", (const char *)subject );
+            env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+            env[n++] = str_printf( "SSL_CLIENT_I_DN=%s", (const char *)issuer );
         }
+    }
+
+    {
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "SERVICENAME=%s", c->opt->servname );
+        env = str_realloc( env, ( n + 2 ) * sizeof( char * ) );
+        env[n++] = str_printf( "CLIENTMODE=%d", c->opt->option.client );
     }
 
     for(p=environ; *p; ++p) {
@@ -2389,13 +3233,12 @@ NOEXPORT SOCKET connect_remote(CLI *c) {
             if(!s_connect(c, &c->connect_addr.addr[c->idx],
                     sockaddr_len(&c->connect_addr.addr[c->idx]),
                     c->opt->timeout_connect)) {
-                if(c->ssl) {
-                    SSL_SESSION *sess=SSL_get1_session(c->ssl);
-                    if(sess) {
-                        idx_cache_save(sess, &c->connect_addr.addr[c->idx]);
-                        SSL_SESSION_free(sess);
-                    }
-                }
+#if defined(MSSPI_LINUX) && defined(HAVE_STRUCT_SOCKADDR_UN)
+                if(c->opt->option.for_hsm &&
+                        c->connect_addr.addr[c->idx].sa.sa_family==AF_UNIX &&
+                        !wire_send_credentials(c->fd))
+                    throw_exception(c, 1);
+#endif
                 print_bound_address(c);
                 fd=c->fd;
                 c->fd=INVALID_SOCKET;
@@ -2416,7 +3259,6 @@ NOEXPORT void idx_cache_save(SSL_SESSION *sess, SOCKADDR_UNION *cur_addr) {
     SOCKADDR_UNION *old_addr, *new_addr;
     socklen_t len;
     char *addr_txt;
-    CRYPTO_RWLOCK *lock;
     int ok;
 
     /* make a copy of the address, so it may work with delayed resolver */
@@ -2428,16 +3270,6 @@ NOEXPORT void idx_cache_save(SSL_SESSION *sess, SOCKADDR_UNION *cur_addr) {
     s_log(LOG_INFO, "persistence: %s cached", addr_txt);
     str_free(addr_txt);
 
-    lock=s_write_lock(LOCK_ADDR);
-    old_addr=SSL_SESSION_get_ex_data(sess, index_session_connect_address);
-    ok=SSL_SESSION_set_ex_data(sess, index_session_connect_address, new_addr);
-    s_unlock(lock);
-    if(ok) {
-        str_free(old_addr); /* NULL pointers are ignored */
-    } else { /* failed to store new_addr -> remove it */
-        ssl_error(NULL, "SSL_SESSION_set_ex_data");
-        str_free(new_addr); /* NULL pointers are ignored */
-    }
 }
 
 NOEXPORT unsigned idx_cache_retrieve(CLI *c) {
@@ -2445,41 +3277,7 @@ NOEXPORT unsigned idx_cache_retrieve(CLI *c) {
     SOCKADDR_UNION addr, *ptr;
     socklen_t len;
     char *addr_txt;
-    CRYPTO_RWLOCK *lock;
 
-    if(c->ssl && SSL_session_reused(c->ssl)) {
-        SSL_SESSION *sess=SSL_get1_session(c->ssl);
-        if(sess) {
-            lock=s_read_lock(LOCK_ADDR);
-            ptr=SSL_SESSION_get_ex_data(sess, index_session_connect_address);
-            if(ptr) {
-                len=sockaddr_len(ptr);
-                (void)memcpy(&addr, ptr, (size_t)len);
-                s_unlock(lock);
-                SSL_SESSION_free(sess);
-                /* address was copied, ptr itself is no longer valid */
-                for(i=0; i<c->connect_addr.num; ++i) {
-                    if(!addr_cmp(&c->connect_addr.addr[i],
-                            sockaddr_len(&c->connect_addr.addr[i]), &addr, len)) {
-                        addr_txt=s_ntop(&addr, len);
-                        s_log(LOG_INFO, "persistence: %s reused", addr_txt);
-                        str_free(addr_txt);
-                        return i;
-                    }
-                }
-                addr_txt=s_ntop(&addr, len);
-                s_log(LOG_INFO, "persistence: %s not available", addr_txt);
-                str_free(addr_txt);
-            } else {
-                s_unlock(lock);
-                SSL_SESSION_free(sess);
-                s_log(LOG_NOTICE, "persistence: No cached address found");
-            }
-        }
-    }
-
-    /* Cppcheck loses this enum constant in one preprocessed configuration. */
-    /* cppcheck-suppress misra-config */
     if(c->opt->failover==FAILOVER_RR) {
         i=(c->connect_addr.start+c->rr)%c->connect_addr.num;
         s_log(LOG_INFO, "failover: round-robin, starting at entry #%d", i);
@@ -2615,14 +3413,7 @@ NOEXPORT int redirect(CLI *c) {
 
     if(!c->opt->redirect_addr.names)
         return 0; /* redirect not configured */
-    if(!c->ssl)
-        return 1; /* TLS not established -> always redirect */
-    sess=SSL_get1_session(c->ssl);
-    if(!sess)
-        return 1; /* no TLS session -> always redirect */
-    ex_data=SSL_SESSION_get_ex_data(sess, index_session_authenticated);
-    SSL_SESSION_free(sess);
-    return ex_data == NULL;
+    return 1;
 }
 
 NOEXPORT void print_bound_address(CLI *c) {
@@ -2643,6 +3434,18 @@ NOEXPORT void print_bound_address(CLI *c) {
     s_log(LOG_NOTICE,"Service [%s] connected remote server from %s",
         c->opt->servname, txt);
     str_free(txt);
+
+    if( c->is_exec )
+    {
+        memcpy( &c->local_addr.sa, &addr.sa, (size_t)addrlen );
+
+        addrlen = sizeof( SOCKADDR_UNION );
+        if( !getpeername( c->fd, &addr.sa, &addrlen ) )
+        {
+            memcpy( &c->peer_addr.sa, &addr.sa, (size_t)addrlen );
+            c->peer_addr_len = addrlen;
+        }
+    }
 }
 
 /* Set linger only on the reset path to force TCP RST.

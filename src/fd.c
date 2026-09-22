@@ -37,7 +37,8 @@
 
 #include "prototypes.h"
 
-#if defined HAVE_PIPE2 && defined HAVE_ACCEPT4
+/* some targets have no SOCK_NONBLOCK */
+#if defined HAVE_PIPE2 && defined HAVE_ACCEPT4 && defined SOCK_NONBLOCK
 #define USE_NEW_LINUX_API 1
 #endif
 

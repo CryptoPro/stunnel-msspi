@@ -888,8 +888,8 @@ void s_ssl_write(CLI *c, const void *buf, int len) {
             throw_exception(c, 1); /* error */
         }
 
-        num=SSL_write(c->ssl, (const void *)ptr, len);
-        err=SSL_get_error(c->ssl, num);
+        num=ssl_write(c, (const void *)ptr, len);
+        err=ssl_get_error(c, num);
         if(err==SSL_ERROR_NONE) {
             ptr=ptr+num;
             len-=num;
@@ -900,7 +900,7 @@ void s_ssl_write(CLI *c, const void *buf, int len) {
             throw_exception(c, 1);
         } else if(err==SSL_ERROR_SYSCALL) {
             if(!socket_needs_retry(c, "s_ssl_write: SSL_write")) {
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break; /* EOF */
             }
@@ -919,7 +919,7 @@ NOEXPORT size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
     while(len>0) {
         int num, err;
 
-        if(!SSL_pending(c->ssl)) {
+        if(!ssl_pending(c)) {
             s_poll_init(c->fds, 0);
             s_poll_add(c->fds, c->ssl_rfd->fd, 1, 0); /* read */
             switch(s_poll_wait(c->fds, c->opt->timeout_busy, 0)) {
@@ -938,8 +938,8 @@ NOEXPORT size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
             }
         }
 
-        num=SSL_read(c->ssl, (char *)ptr+total, len);
-        err=SSL_get_error(c->ssl, num);
+        num=ssl_read(c, (char *)ptr+total, len);
+        err=ssl_get_error(c, num);
         if(err==SSL_ERROR_NONE) {
             total+=(size_t)num;
             len-=num;
@@ -956,7 +956,7 @@ NOEXPORT size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
                 /* EOF -> buggy (e.g. Microsoft) peer:
                  * TLS socket closed without close_notify alert */
                 s_log(LOG_DEBUG, "s_ssl_read_eof: TLS socket closed");
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break; /* EOF */
             }
@@ -965,7 +965,7 @@ NOEXPORT size_t s_ssl_read_eof(CLI *c, void *ptr, int len) {
             throw_exception(c, 1);
         } else if(err==SSL_ERROR_SYSCALL) {
             if(!socket_needs_retry(c, "s_ssl_read_eof: SSL_read")) {
-                SSL_set_shutdown(c->ssl,
+                ssl_set_shutdown(c,
                     SSL_SENT_SHUTDOWN|SSL_RECEIVED_SHUTDOWN);
                 break; /* EOF */
             }
@@ -1257,69 +1257,22 @@ int socket_needs_retry(CLI *c, const char *text) {
 }
 
 #ifdef USE_DTLS
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-/* copy an OpenSSL datagram peer address to the socket representation */
-int bio_addr_to_sockaddr(const BIO_ADDR *src, SOCKADDR_UNION *dst) {
-    u_short family=(u_short)BIO_ADDR_family(src);
-    size_t len;
 
-    (void)memset(dst, 0, sizeof *dst);
-    switch(family) {
-        case AF_INET:
-            dst->in.sin_family=AF_INET;
-            dst->in.sin_port=BIO_ADDR_rawport(src);
-            len=sizeof dst->in.sin_addr;
-            if(!BIO_ADDR_rawaddress(src, &dst->in.sin_addr, &len) ||
-                    len!=sizeof dst->in.sin_addr)
-                return 1;
-            return 0;
-#ifdef USE_IPV6
-        case AF_INET6:
-            dst->in6.sin6_family=AF_INET6;
-            dst->in6.sin6_port=BIO_ADDR_rawport(src);
-            len=sizeof dst->in6.sin6_addr;
-            if(!BIO_ADDR_rawaddress(src, &dst->in6.sin6_addr, &len) ||
-                    len!=sizeof dst->in6.sin6_addr)
-                return 1;
-            return 0;
-#endif
-        default:
-            s_log(LOG_ERR, "DTLS: unsupported peer address family: %d",
-                family);
-            return 1;
-    }
-}
-#endif /* OpenSSL version >= 1.1.0 */
-
-/* validate DTLS cookie and pre-accept the ClientHello */
+/* Take the first datagram of a new peer and let the cookie exchange decide
+   whether it deserves a session. */
 int dtls_listen(CLI *c, SOCKET fd) {
-    SSL *new_ssl;
-    BIO *bio;
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-    BIO_ADDR *peer;
-    int dtls_ret;
-#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-    SOCKADDR_UNION peer;
-    long dtls_ret;
-#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
     char buf[BUFFSIZE];
     ssize_t len;
-    int err;
 
-    c->ssl=NULL;
-#if OPENSSL_VERSION_NUMBER>=0x10100000L
-    c->udp_preload_bio=NULL;
-#endif
     c->peer_addr_len=sizeof c->peer_addr;
-    /* The cookie callback needs the peer address.  Peek first, then let
-     * DTLSv1_listen() consume the same datagram from the socket BIO.
-     * WinSock returns WSAEMSGSIZE if the buffer is shorter than the
-     * UDP datagram, even with MSG_PEEK. */
+    /* The datagram is consumed rather than peeked at: nothing else reads this
+     * socket on behalf of the new peer, so it is kept and handed to the
+     * handshake through the msspi read callback. */
 #ifdef MSG_TRUNC
-    len=recvfrom(fd, buf, sizeof buf, MSG_PEEK|MSG_TRUNC,
+    len=recvfrom(fd, buf, sizeof buf, MSG_TRUNC,
         &c->peer_addr.sa, &c->peer_addr_len);
 #else
-    len=recvfrom(fd, buf, sizeof buf, MSG_PEEK,
+    len=recvfrom(fd, buf, sizeof buf, 0,
         &c->peer_addr.sa, &c->peer_addr_len);
 #endif
     if(len<0) {
@@ -1329,15 +1282,12 @@ int dtls_listen(CLI *c, SOCKET fd) {
                 break;
 #ifdef S_EMSGSIZE
             case S_EMSGSIZE:
-                c->peer_addr_len=sizeof c->peer_addr;
-                (void)recvfrom(fd, buf, sizeof buf, 0,
-                    &c->peer_addr.sa, &c->peer_addr_len);
                 s_log(LOG_WARNING,
                     "DTLS: oversized datagram discarded");
                 break;
 #endif
             default:
-                sockerror("DTLSv1_listen: recvfrom");
+                sockerror("DTLS: recvfrom");
         }
         return 0;
     }
@@ -1346,100 +1296,66 @@ int dtls_listen(CLI *c, SOCKET fd) {
 #else
     if(len==BUFFSIZE) {
 #endif
-        c->peer_addr_len=sizeof c->peer_addr;
-#ifdef MSG_TRUNC
-        (void)recvfrom(fd, buf, sizeof buf, MSG_TRUNC,
-            &c->peer_addr.sa, &c->peer_addr_len);
-#else
-        (void)recvfrom(fd, buf, sizeof buf, 0,
-            &c->peer_addr.sa, &c->peer_addr_len);
-#endif
         s_log(LOG_WARNING,
             "DTLS: datagram larger than BUFFSIZE"
             " (%d bytes); discarding", BUFFSIZE);
         return 0;
     }
 
-    new_ssl=SSL_new(c->opt->ctx);
-    if(!new_ssl) {
-        ssl_error(NULL, "DTLSv1_listen: SSL_new");
+    /* Only a ClientHello may start a session, which is the rule that keeps a
+     * stray datagram from opening one: a close_notify from a session that has
+     * just ended arrives here once its socket is gone. */
+    if(len<DTLS1_RT_HEADER_LENGTH+DTLS1_HM_HEADER_LENGTH ||
+            buf[0]!=SSL3_RT_HANDSHAKE || buf[DTLS1_RT_HEADER_LENGTH]!=1) {
+        s_log(LOG_DEBUG, "DTLS: datagram is not a ClientHello, ignored");
         return 0;
     }
-    if(!SSL_set_ex_data(new_ssl, index_ssl_cli, c)) {
-        ssl_error(NULL, "DTLSv1_listen: SSL_set_ex_data");
-        SSL_free(new_ssl);
-        return 0;
-    }
-    bio=BIO_new_dgram((int)fd, BIO_NOCLOSE);
-    if(!bio) {
-        ssl_error(NULL, "DTLSv1_listen: BIO_new_dgram");
-        SSL_free(new_ssl);
-        return 0;
-    }
-    SSL_set_bio(new_ssl, bio, bio);
-    SSL_set_accept_state(new_ssl);
 
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-    peer=BIO_ADDR_new();
-    if(!peer) {
-        s_log(LOG_ERR, "DTLSv1_listen: BIO_ADDR_new() failed");
-        SSL_free(new_ssl);
-        return 0;
-    }
-    dtls_ret=DTLSv1_listen(new_ssl, peer);
-    if(dtls_ret>0) {
-        if(bio_addr_to_sockaddr(peer, &c->peer_addr)) {
-            s_log(LOG_ERR, "DTLSv1_listen: invalid peer address");
-            dtls_ret=0;
+    /* The record has to be whole and to hold a whole handshake header, and
+     * the fragment has to be the size the header says. A datagram that only
+     * starts like a ClientHello costs a thread, a socket and a provider
+     * context otherwise. */
+    {
+        const unsigned char *rec=(const unsigned char *)buf;
+        const unsigned char *hm=rec+DTLS1_RT_HEADER_LENGTH;
+        size_t record_len=((size_t)rec[11]<<8)|(size_t)rec[12];
+        size_t fragment_off=((size_t)hm[6]<<16)|((size_t)hm[7]<<8)|(size_t)hm[8];
+        size_t fragment_len=((size_t)hm[9]<<16)|((size_t)hm[10]<<8)|(size_t)hm[11];
+
+        /* Only the first fragment starts a session: a later one belongs to a
+           session that already exists, and taking it for a new peer builds a
+           second one for the same address. */
+        if(record_len+DTLS1_RT_HEADER_LENGTH>(size_t)len ||
+                record_len<DTLS1_HM_HEADER_LENGTH ||
+                fragment_off ||
+                fragment_len+DTLS1_HM_HEADER_LENGTH!=record_len) {
+            s_log(LOG_DEBUG, "DTLS: malformed ClientHello record, ignored");
+            return 0;
         }
     }
-    BIO_ADDR_free(peer);
-#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-    memset(&peer, 0, sizeof peer);
-    dtls_ret=DTLSv1_listen(new_ssl, &peer.sa);
-    if(dtls_ret>0)
-        memcpy(&c->peer_addr, &peer, sizeof peer);
-#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
 
-    if(dtls_ret>0) {
-        c->peer_addr_len=sockaddr_len(&c->peer_addr);
-        s_log(LOG_DEBUG, "DTLS: ClientHello accepted on listen socket");
-        c->ssl=new_ssl;
-        return 1;
+    if(!udp_preload_push(c, buf, (size_t)len)) {
+        s_log(LOG_ERR, "DTLS: unable to keep the ClientHello");
+        return 0;
     }
-    if(dtls_ret<0) {
-        err=SSL_get_error(new_ssl, (int)dtls_ret);
-        if(err!=SSL_ERROR_WANT_READ && err!=SSL_ERROR_WANT_WRITE)
-            ssl_error(NULL, "DTLSv1_listen");
-        else
-            ERR_clear_error();
-    } else {
-        s_log(LOG_DEBUG,
-            "DTLS: HelloVerifyRequest sent or ClientHello discarded");
-        ERR_clear_error();
+
+    if(!dtls_cookie_probe(c, fd)) {
+        udp_preload_free(c);
+        return 0;
     }
-    SSL_free(new_ssl);
-    return 0;
+    s_log(LOG_DEBUG, "DTLS: ClientHello accepted on the listening socket");
+    return 1;
 }
 
-/* Drain same-peer datagrams from the listen socket.  Called after
- * the first datagram was consumed (by dtls_listen() in server mode
- * or accept_udp_peer() in client mode) to prevent duplicate sessions
- * for the same 4-tuple.  Must be synchronous in the main thread:
- * the accept loop polls the listen fd; leftover datagrams would be
- * consumed as bogus new clients.
+/* Drain same-peer datagrams from the listening socket into c->udp_preload.
+ * Called once the peer has a socket of its own, to prevent duplicate
+ * sessions for the same 4-tuple.  Must be synchronous in the main thread:
+ * the accept loop polls the listening socket, and leftover datagrams would
+ * be taken there for new clients.
  *
- * Server mode: the first ClientHello fragment is already in the SSL
- * handshake state.  Drained fragments are DTLS handshake data queued
- * in udp_preload_bio for consumption by set_preload_bio().
- * Client mode: the first plaintext datagram is in c->sock_ptr.
- * Drained datagrams are plaintext payload queued in udp_preload_bio
- * for consumption by transfer_udp().
- *
- * When USE_DTLS_DGRAM_BIO is available (OpenSSL >= 3.2): datagrams
- * are queued in c->udp_preload_bio (dgram BIO preserves boundaries).
- * On older OpenSSL: extra datagrams are dropped (the first fragment
- * is preserved).  Cap at 32 to bound main-thread blocking.
+ * Server mode: the queue holds DTLS records, which the encrypted read
+ * callback takes.  Client mode: it holds plaintext, which transfer_udp()
+ * sends.  The cap of 32 bounds how long the main thread stays here.
  *
  * Limitation: interleaved bursts from multiple peers (A, B, A) can
  * leave later same-peer datagrams on the listener and create a
@@ -1557,102 +1473,22 @@ int drain_udp_datagrams(CLI *c, SOCKET fd) {
         if(addr_cmp(&peer, peer_len, &c->peer_addr, c->peer_addr_len))
             break;
         ++count;
-#ifdef USE_DTLS_DGRAM_BIO
-        if(len) {
-            if(!c->udp_preload_bio) {
-                c->udp_preload_bio=BIO_new(BIO_s_dgram_mem());
-                if(!c->udp_preload_bio) {
-                    ssl_error(NULL, "UDP drain: BIO_new");
-                    goto fail;
-                }
-            }
-            if(BIO_write(c->udp_preload_bio, buf, (int)len)!=(int)len) {
-                ssl_error(NULL, "UDP drain: BIO_write");
-                goto fail;
-            }
+        if(len && !udp_preload_push(c, buf, (size_t)len)) {
+            s_log(LOG_WARNING,
+                "UDP drain: queue full, %u datagram(s) kept", count-1);
+            break;
         }
-#else
-        (void)len; /* squash the unused variable warning */
-#endif /* USE_DTLS_DGRAM_BIO */
     }
-#ifdef USE_DTLS_DGRAM_BIO
     if(count>dropped)
         s_log(LOG_DEBUG, "UDP drain: queued %u datagram(s)", count-dropped);
-#else
-    if(count>dropped)
-        s_log(LOG_WARNING,
-            "UDP drain: dropped %u datagram(s) from same peer"
-            " (reduced functionality on this OpenSSL version)", count-dropped);
-#endif /* USE_DTLS_DGRAM_BIO */
     if(dropped)
         s_log(LOG_WARNING,
             "UDP drain: discarded %u oversized datagram(s)", dropped);
     return 0;
 
 fail:
-    (void)BIO_free(c->udp_preload_bio);
-    c->udp_preload_bio=NULL;
+    udp_preload_free(c);
     return 1;
-}
-
-/* pseudo-blocking DTLS accept with cookie exchange */
-void dtls_accept(CLI *c) {
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-    BIO_ADDR *peer;
-    int dtls_ret;
-#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-    SOCKADDR_UNION peer;
-    long dtls_ret;
-#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-    peer=BIO_ADDR_new();
-    if(!peer) {
-        s_log(LOG_ERR, "DTLS: BIO_ADDR_new() failed");
-        throw_exception(c, 1);
-    }
-    s_log(LOG_DEBUG, "DTLS: waiting for ClientHello");
-    while(1) {
-        int ret;
-
-        dtls_ret=DTLSv1_listen(c->ssl, peer);
-        if(dtls_ret>0)
-            break;
-        if(dtls_ret<0) {
-            BIO_ADDR_free(peer);
-            ssl_error(c, "DTLSv1_listen");
-            throw_exception(c, 1);
-        }
-
-        s_poll_init(c->fds, 0);
-        s_poll_add(c->fds, c->ssl_rfd->fd, 1, 0);
-        ret=s_poll_wait(c->fds, c->opt->timeout_busy, 0);
-        if(ret<0) {
-            sockerror("DTLSv1_listen: s_poll_wait");
-            BIO_ADDR_free(peer);
-            throw_exception(c, 1);
-        }
-        if(ret==0) {
-            s_log(LOG_INFO, "DTLSv1_listen: TIMEOUTbusy exceeded");
-            BIO_ADDR_free(peer);
-            throw_exception(c, 1);
-        }
-    }
-    BIO_ADDR_free(peer);
-    s_log(LOG_DEBUG, "DTLS: ClientHello accepted");
-#else /* OPENSSL_VERSION_NUMBER>=0x10100000L */
-    memset(&peer, 0, sizeof peer);
-    s_log(LOG_DEBUG, "DTLS: waiting for ClientHello");
-    /* Call DTLSv1_listen() once to start the cookie exchange.
-     * Do NOT retry it in a loop: DTLSv1_listen() calls SSL_clear()
-     * which destroys the DTLS handshake state (HelloVerifyRequest
-     * already sent, waiting for cookie-containing ClientHello).
-     * If it returns <=0, fall through to the SSL_accept() loop
-     * below which continues the handshake. */
-    dtls_ret=DTLSv1_listen(c->ssl, &peer.sa);
-    if(dtls_ret>0)
-        s_log(LOG_DEBUG, "DTLS: ClientHello accepted");
-#endif /* OPENSSL_VERSION_NUMBER>=0x10100000L */
 }
 
 #endif /* USE_DTLS */

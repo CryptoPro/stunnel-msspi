@@ -38,6 +38,17 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+/* This is a fork of stunnel that talks to the CryptoPro SSP through msspi.
+   OpenSSL is not linked: its headers are still included for the constants and
+   types the upstream code is written against, but no libssl or libcrypto call
+   survives in the build. */
+#define USE_OS_THREADS
+typedef void CRYPTO_RWLOCK;
+
+#ifdef __linux__
+#define MSSPI_LINUX
+#endif
+
 #include "version.h"
 
 /**************************************** common constants */
@@ -47,15 +58,14 @@
 #define LIBWRAP_CLIENTS 5
 
 /* CPU stack size */
-#if defined(__ILP32__) && !defined(__NetBSD__)
-#define DEFAULT_STACK_SIZE 65536
-#else
-#define DEFAULT_STACK_SIZE 131072
-#endif
+#define DEFAULT_STACK_SIZE 262144
 /* #define DEBUG_STACK_SIZE */
 
 /* I/O buffer size: 18432 (0x4800) is the maximum size of TLS record payload */
 #define BUFFSIZE 18432
+
+/* datagrams the UDP accept path may hold for a peer before it has a socket */
+#define MAX_UDP_PRELOAD 32
 
 /* how many bytes of random input to read from files for PRNG */
 /* security margin is huge to compensate for flawed entropy */
@@ -349,9 +359,7 @@ typedef int SOCKET;
 /* cppcheck-suppress misra-c2012-21.5 */
 #include <signal.h>         /* signal */
 #include <sys/wait.h>       /* wait */
-#ifdef HAVE_LIMITS_H
 #include <limits.h>         /* INT_MAX */
-#endif
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>   /* getrlimit */
 #endif
@@ -453,8 +461,8 @@ extern char *sys_errlist[];
 #ifdef HAVE_SYS_SYSCALL_H
 #include <sys/syscall.h> /* SYS_gettid */
 #endif
-#ifdef HAVE_LINUX_SCHED_H
-#include <linux/sched.h> /* SCHED_BATCH */
+#ifdef HAVE_SCHED_H
+#include <sched.h> /* SCHED_BATCH */
 #endif
 
 #endif /* USE_WIN32 */
@@ -472,6 +480,22 @@ extern char *sys_errlist[];
 #include <openssl/opensslconf.h>
 /* opensslv.h requires prior opensslconf.h to include -fips in version string */
 #include <openssl/opensslv.h>
+
+#define OPENSSL_NO_ENGINE
+#define OPENSSL_NO_PSK
+#define OPENSSL_NO_ECDH
+#define OPENSSL_NO_DH
+#define OPENSSL_NO_COMP
+#define OPENSSL_NO_MD4
+#define OPENSSL_NO_TLS1_3
+#undef OPENSSL_VERSION_NUMBER
+#define OPENSSL_VERSION_NUMBER 0x10100000L
+#ifndef TLS1_1_VERSION
+#define TLS1_1_VERSION 0x0302
+#endif
+#ifndef TLS1_2_VERSION
+#define TLS1_2_VERSION 0x0303
+#endif
 
 #if OPENSSL_VERSION_NUMBER<0x0090800fL
 #error OpenSSL 0.9.8 or later is required
@@ -520,10 +544,6 @@ extern char *sys_errlist[];
 #endif /* !defined(OPENSSL_NO_DTLS1_2) */
 #endif /* OpenSSL older than 1.0.2 */
 
-#ifdef USE_WIN32
-#define USE_FIPS
-#endif
-
 #include <openssl/conf.h>
 #include <openssl/lhash.h>
 #include <openssl/ssl.h>
@@ -564,14 +584,9 @@ STACK_OF(SSL_COMP) *SSL_COMP_get_compression_methods(void);
 #define SSL3_RT_MAX_PLAIN_LENGTH 16384
 #endif /* !defined(SSL3_RT_MAX_PLAIN_LENGTH) */
 
-#if !defined(OPENSSL_NO_DTLS) && !defined(OPENSSL_NO_DGRAM) && \
-        !defined(OPENSSL_NO_SOCK) && \
-        (!defined(OPENSSL_NO_DTLS1) || !defined(OPENSSL_NO_DTLS1_2))
+/* The UDP transport upstream added is used as it stands; the record layer
+   under it is msspi, not OpenSSL. */
 #define USE_DTLS
-#endif
-#if defined(USE_DTLS) && OPENSSL_VERSION_NUMBER>=0x30200000L
-#define USE_DTLS_DGRAM_BIO
-#endif
 
 #ifndef OPENSSL_VERSION
 #define OPENSSL_VERSION SSLEAY_VERSION

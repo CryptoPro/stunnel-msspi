@@ -1,0 +1,113 @@
+name: ci
+on: [push]
+
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-latest
+    name: CI (linux-amd64)
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup
+      shell: bash
+      run: |
+        git submodule update --init --recursive --depth 1
+        sudo apt update && sudo apt install -y autoconf-archive libssl-dev libwrap0-dev
+
+    - name: CryptoPro CSP
+      env:
+        CPRO_CREDENTIALS: ${{ secrets.CPRO_CREDENTIALS }}
+      shell: bash
+      run: |
+        # The suite needs DTLS, which the package set shipped with the stunnel
+        # distribution does not have; this one carries its licence beside it.
+        kit=https://update.cryptopro.ru/support/stunnel/dist/csp5.0.13847
+        sha256=248a8fc904f37c01131978f858fd724eed0595cdf9ac63d987f42b98c50ec073
+        # the credential goes in on stdin, so it stays out of the process list
+        auth=$(printf 'user = "%s"\n' "$CPRO_CREDENTIALS")
+        echo "$auth" | curl --config - --fail --location --silent --show-error \
+          --output linux-amd64_deb.tgz "$kit/linux-amd64_deb.tgz"
+        echo "$sha256  linux-amd64_deb.tgz" | sha256sum --check
+        echo "$auth" | curl --config - --fail --location --silent --show-error \
+          --output license.ini "$kit/license.ini"
+        echo "$auth" | curl --config - --fail --location --silent --show-error \
+          --output dsrf.tar "$kit/dsrf.tar"
+        tar -xf linux-amd64_deb.tgz
+        # once on the runner, where the suite runs; the build installs its own
+        # copy inside the container
+        ( cd linux-amd64_deb && sudo ./install.sh kc1 )
+        sudo /opt/cprocsp/sbin/amd64/cpconfig -license -set "$(tr -d '\r\n' < license.ini)"
+
+    - name: Reference stunnel
+      shell: bash
+      run: |
+        version=5.82
+        sha256=8e7438ccd6b3a2ab05182d0846e112a56a7f557ecdee40de07bf67820008bef7
+        curl --fail --location --silent --show-error \
+          --output "stunnel-$version.tar.gz" \
+          "https://www.stunnel.org/archive/5.x/stunnel-$version.tar.gz"
+        echo "$sha256  stunnel-$version.tar.gz" | sha256sum --check
+        tar -xzf "stunnel-$version.tar.gz"
+        ( cd "stunnel-$version" && ./configure --disable-libwrap >/dev/null && make -C src stunnel >/dev/null )
+        sudo install -m 0755 "stunnel-$version/src/stunnel" /usr/local/bin/stunnel-reference
+        stunnel-reference -version 2>&1 | head -3
+
+    - name: Build
+      env:
+        CONFIGURE_OPTIONS: --with-threads=pthread --enable-msspi
+        CSPMODE: kc1
+      shell: bash
+      run: bash -ex ./build_linux_amd64.sh
+
+    - name: Test
+      shell: bash
+      run: ( cd tests && sudo CSP_DSRF="$GITHUB_WORKSPACE/dsrf.tar" python3 msspi/run.py )
+
+    - name: Keep the artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-amd64
+        path: src/${{ github.ref_name }}-linux-amd64.tar.gz
+        if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    name: CI (windows)
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      shell: cmd
+      env:
+        BUILD_TAG: ${{ github.ref_name }}
+      run: build_win.bat
+
+    - name: Keep the artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows
+        path: "${{ github.ref_name }}-*-windows.zip"
+        if-no-files-found: error
+
+  release:
+    needs: linux-amd64
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    name: Release
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: linux-amd64
+        path: artifacts
+
+    - name: Publish
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      shell: bash
+      run: |
+        tag="${GITHUB_REF#refs/tags/}"
+        gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
+        gh release upload "$tag" "artifacts/$tag-linux-amd64.tar.gz" --clobber

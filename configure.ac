@@ -27,7 +27,20 @@ AC_DEFINE_UNQUOTED(esc(CPU_${host_cpu}))
 AC_DEFINE_UNQUOTED(esc(VENDOR_${host_vendor}))
 AC_DEFINE_UNQUOTED(esc(OS_${host_os}))
 
-AC_PROG_CC
+case "${host_os}" in
+*darwin*)
+    # OSX does not declare ucontext without _XOPEN_SOURCE
+    AC_DEFINE([_XOPEN_SOURCE], [500], [Use X/Open 5 with POSIX 1995])
+    # OSX does not declare chroot() without _DARWIN_C_SOURCE
+    AC_DEFINE([_DARWIN_C_SOURCE], [1], [Use Darwin source])
+    ;;
+*)
+    AC_DEFINE([_GNU_SOURCE], [1], [Use GNU source])
+    ;;
+esac
+
+AC_PROG_CC([gcc clang cl cc])
+AC_PROG_CXX
 AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
@@ -302,6 +315,47 @@ AC_ARG_ENABLE([ipv6],
     ], [
         AC_MSG_RESULT([yes (default)])
         AC_DEFINE([USE_IPV6], [1], [Define to 1 to enable IPv6 support])
+    ]
+)
+
+# Use msspi?
+AC_MSG_CHECKING([whether to enable msspi support])
+AC_ARG_ENABLE(msspi,
+[  --enable-msspi          enable msspi support],
+    [
+        case "$enableval" in
+            yes) AC_MSG_RESULT([yes])
+                 AC_DEFINE([USE_MSSPI], [1],
+                    [Define to 1 to enable MSSPI support])
+                 AC_DEFINE([MSSPI_USE_MSSPI_CERT], [1],
+                    [Define to 1 to enable MSSPI certificate parsing])
+
+                 LIBS="-L./msspi/build_linux -lmsspi-cert $LIBS -lstdc++ -ldl"
+                 case "$host_cpu" in
+                    arm*) LIBS="$LIBS -L/opt/cprocsp/lib/arm"
+                           ;;
+                    aarch64) LIBS="$LIBS -L/opt/cprocsp/lib/aarch64"
+                           ;;
+                    amd64|x86_64) LIBS="$LIBS -L/opt/cprocsp/lib/amd64"
+                           ;;
+                    mips*) LIBS="$LIBS -L/opt/cprocsp/lib/mipsel"
+                           ;;
+                    *)     LIBS="$LIBS -L/opt/cprocsp/lib/amd64"
+                           ;;
+                 esac
+                 LIBS="$LIBS -lcapi10 -lcapi20 -lrdrsup"
+
+                 ;;
+            no)  AC_MSG_RESULT([no])
+                 ;;
+            *)   AC_MSG_RESULT([error])
+                 AC_MSG_ERROR([bad value \"${enableval}\"])
+                 ;;
+        esac
+    ], [
+        AC_MSG_RESULT([no (default)])
+    ], [
+        AC_MSG_RESULT([yes])
     ]
 )
 

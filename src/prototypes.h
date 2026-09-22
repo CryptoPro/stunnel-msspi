@@ -40,6 +40,8 @@
 
 #include "common.h"
 
+#include "msspi/src/msspi.h"
+
 #if defined(USE_PTHREAD) || defined(USE_WIN32)
 #define USE_OS_THREADS
 #endif
@@ -90,7 +92,7 @@ struct CRYPTO_dynlock_value {
 #endif
 };
 
-typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK;
+typedef struct CRYPTO_dynlock_value CRYPTO_RWLOCK_REAL;
 
 #else /* USE_OS_THREADS */
 
@@ -207,6 +209,9 @@ struct global_options_struct {
     char *egd_sock;                       /* entropy gathering daemon socket */
     char *rand_file;                                /* file with random data */
     long random_bytes;                      /* how many random bytes to read */
+#ifdef MSSPI_LINUX
+    int crypto_parallel;
+#endif
 
         /* some global data for stunnel.c */
 #ifndef USE_WIN32
@@ -320,6 +325,23 @@ struct service_options_struct {
 #endif /* TLS 1.3 */
     NAME_LIST *cert;    /* list of certificate identifiers (URI or filename) */
     char *key;                               /* pem (priv key/cert) filename */
+    char *pin;                                     /* pin-code for msspi key */
+    char *cert2;                                   /* second cert (fallback) */
+    char *pin2;                                  /* pin-code for second cert */
+    NAME_LIST * checkSubject;                         /* strcmp cert subject */
+    NAME_LIST * checkIssuer;                           /* strcmp cert issuer */
+    char certtype;                                     /* cert type detector */
+    char certtype2;                                   /* cert2 type detector */
+    size_t dtls_mtu;            /* link MTU; IP and UDP come off before the SSP */
+    enum {                  /* what to make of a revocation check */
+        REVOCATION_FULL,    /* it has to be done, and clean */
+        REVOCATION_AUTO,    /* accept a certificate with no CRL or OCSP */
+        REVOCATION_NO       /* do not look */
+    } verify_revocation;
+    char *certdata;      /* cert read from a file once, instead of per session */
+    size_t certdata_len;
+    char *certdata2;
+    size_t certdata2_len;
     long session_size, session_timeout;
 #if OPENSSL_VERSION_NUMBER>=0x10100000L
     int security_level;
@@ -373,6 +395,8 @@ struct service_options_struct {
     SSL_SESSION **connect_session;   /* per-destination client session cache */
     SSL_SESSION *session;    /* previous client session for delayed resolver */
     int timeout_busy;                       /* maximum waiting for data time */
+    int timeout_handshake;                  /* maximum handshake time */
+    int timeout_cookie;             /* before a DTLS peer answers our cookie */
     int timeout_close;                          /* maximum close_notify time */
     int timeout_connect;                         /* maximum s_connect() time */
     int timeout_idle;                        /* maximum idle connection time */
@@ -406,6 +430,11 @@ struct service_options_struct {
         /* on/off switches */
     int sock_type;                      /* SOCK_STREAM (default) or SOCK_DGRAM */
     struct {
+#ifdef MSSPI_LINUX
+        unsigned for_hsm:1;             /* CryptoPro HSM Unix credential handshake */
+#endif
+        unsigned silent:1;
+        unsigned selftest:1;
         unsigned request_cert:1;        /* request a peer certificate */
         unsigned require_cert:1;        /* require a client certificate */
         unsigned verify_chain:1;        /* verify certificate chain */
@@ -526,6 +555,11 @@ typedef enum {
 } RENEG_STATE;
 
 struct client_data_struct {
+    MSSPI_HANDLE msh;
+    int msspi_peer_verified;
+    int msspi_cert_aborted;   /* our own cert_cb stopped the handshake */
+    SOCKET rfd;
+    SOCKET wfd;
     jmp_buf *exception_pointer;
 
     SSL *ssl;                                              /* TLS connection */
@@ -541,6 +575,10 @@ struct client_data_struct {
 
     SOCKADDR_UNION peer_addr;                                /* peer address */
     socklen_t peer_addr_len;
+    SOCKADDR_UNION local_addr;                              /* local address */
+    socklen_t local_addr_len;
+    SOCKET exec_fd;
+    int is_exec;
     char *accepted_address;    /* textual representation of the peer address */
     SOCKADDR_UNION *bind_addr;               /* address to bind() the socket */
     SOCKADDR_LIST connect_addr;     /* either copied or resolved dynamically */
@@ -567,11 +605,26 @@ struct client_data_struct {
 #ifndef OPENSSL_NO_PSK
         unsigned psk_found:1;                      /* PSK identity was found */
 #endif /* !defined(OPENSSL_NO_PSK) */
+#ifdef USE_DTLS
+        unsigned udp_listening:1;   /* the cookie exchange still runs on the
+                                       listening socket, so writes need the
+                                       peer address */
+        unsigned udp_hello_verify:1;      /* a HelloVerifyRequest went out */
+        unsigned udp_unproven:1;          /* no ServerHello has gone out yet */
+#endif /* USE_DTLS */
     } flag;
 
 #ifdef USE_DTLS
-    BIO *udp_preload_bio;  /* drain_udp_datagrams() (server + client); see
-                             * set_preload_bio() / transfer_udp() */
+    /* datagrams taken off the listening socket before this peer had a socket
+       of its own: the ClientHello the listener read, and whatever the drain
+       found behind it.  The DTLS handshake takes them from the msspi read
+       callback, plaintext ones go to transfer_udp(). */
+    unsigned char *udp_preload[MAX_UDP_PRELOAD];
+    size_t udp_preload_len[MAX_UDP_PRELOAD];
+    unsigned udp_preload_count, udp_preload_pos;
+    /* when the handshake runs out of time; the read callback stops feeding
+       the provider then, so the deadline is reached however busy we are */
+    time_t handshake_deadline;
 #endif /* USE_DTLS */
 };
 
@@ -771,12 +824,14 @@ int original_dst(const SOCKET fd, SOCKADDR_UNION *addr);
 int socket_needs_retry(CLI *c, const char *text);
 
 #ifdef USE_DTLS
-#if OPENSSL_VERSION_NUMBER>=0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-int bio_addr_to_sockaddr(const BIO_ADDR *src, SOCKADDR_UNION *dst);
+#if OPENSSL_VERSION_NUMBER>=0x10100000L
 #endif
 int dtls_listen(CLI *c, SOCKET fd);
-void dtls_accept(CLI *c);
+int dtls_cookie_probe(CLI *c, SOCKET fd);
 int drain_udp_datagrams(CLI *c, SOCKET fd);
+int udp_preload_push(CLI *c, const void *data, size_t len);
+size_t udp_preload_pop(CLI *c, void *buf, size_t len);
+void udp_preload_free(CLI *c);
 #endif /* USE_DTLS */
 
 /**************************************** prototypes for client.c */
@@ -1034,6 +1089,34 @@ int (*ui_get_closer(void)) (UI *ui);
 ICON_IMAGE load_icon_default(ICON_TYPE type);
 ICON_IMAGE load_icon_file(const char *file_name);
 #endif
+
+#ifdef MSSPI_LINUX
+void msspi_gate_init( long );
+#endif /* MSSPI_LINUX */
+
+char *msspi_read_cert_file( const char *, size_t * );
+
+int SSL_get_error_msspi( MSSPI_HANDLE h, int ret );
+int SSL_get_shutdown_msspi( MSSPI_HANDLE h );
+const char * SSL_get_version_msspi( MSSPI_HANDLE h );
+
+#undef SSL_R_UNEXPECTED_EOF_WHILE_READING
+
+/* TLS backend, implemented in client.c: one entry point per operation that
+   differs between OpenSSL and msspi */
+int ssl_connect(CLI *);
+int ssl_accept(CLI *);
+int ssl_read(CLI *, void *, int);
+int ssl_write(CLI *, const void *, int);
+int ssl_shutdown(CLI *);
+void ssl_close(CLI *);
+int ssl_pending(CLI *);
+int ssl_has_pending(CLI *);
+int ssl_get_error(CLI *, int);
+int ssl_get_shutdown(CLI *);
+void ssl_set_shutdown(CLI *, int);
+const char *ssl_get_version(CLI *);
+int ssl_version(CLI *);
 
 #endif /* defined PROTOTYPES_H */
 

@@ -342,30 +342,4 @@ void ui_new_log(const char *line) {
     (void)fprintf(stderr, "%s\n", line);
 }
 
-/**************************************** ctx callbacks */
-
-int ui_passwd_cb(char *buf, int size, int rwflag, void *userdata) {
-    return PEM_def_callback(buf, size, rwflag, userdata);
-}
-
-#if !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L
-
-int (*ui_get_opener(void)) (UI *ui) {
-    return UI_method_get_opener(UI_OpenSSL());
-}
-
-int (*ui_get_writer(void)) (UI *ui, UI_STRING *uis) {
-    return UI_method_get_writer(UI_OpenSSL());
-}
-
-int (*ui_get_reader(void)) (UI *ui, UI_STRING *uis) {
-    return UI_method_get_reader(UI_OpenSSL());
-}
-
-int (*ui_get_closer(void)) (UI *ui) {
-    return UI_method_get_closer(UI_OpenSSL());
-}
-
-#endif /* !defined(OPENSSL_NO_ENGINE) || OPENSSL_VERSION_NUMBER>=0x10101000L */
-
 /* end of ui_unix.c */

@@ -47,7 +47,7 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #endif /* __GNUC__ */
 
-#include <openssl/applink.c>
+#include <ms/applink.c>
 
 #ifdef __GNUC__
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6)
@@ -131,8 +131,6 @@ int stunnel_init(void) { /* basic initialization */
 
     tls_init(); /* initialize thread-local storage */
     str_init(); /* initialize memory allocator */
-    if(crypto_init()) /* initialize libcrypto */
-        return 1;
 #ifdef USE_WIN32
     /* MISRA 10.4 deviation: Windows MAKEWORD mixes unsigned values and signed masks. */
     /* cppcheck-suppress misra-c2012-10.4 */
@@ -160,12 +158,8 @@ void main_init(void) { /* one-time initialization */
 #endif
     /* basic initialization contains essential functions required for logging
      * subsystem to function properly, thus all errors here are fatal */
-    if(ssl_init()) /* initialize libssl */
-        fatal("TLS initialization failed");
     if(sthreads_init()) /* initialize critical sections & TLS callbacks */
         fatal("Threads initialization failed");
-    if(ctx_init()) /* initialize shared data for SSL_CTX */
-        fatal("SSL_CTX initialization failed");
     options_defaults(); /* initialize defaults */
     options_apply(); /* apply the defaults */
 #ifndef USE_FORK
@@ -292,9 +286,6 @@ void main_cleanup(void) {
     /* TODO: force releasing options for references held by killed threads */
 
     /* release shared resources */
-    ctx_cleanup();
-    ssl_cleanup();
-    crypto_cleanup(); /* no OpenSSL functionality beyond this point */
 
     /* disable logging */
 #if 0
@@ -326,18 +317,6 @@ NOEXPORT void terminate_threads(void) {
     for(c=thread_head; c; c=c->thread_next) { /* copy client threads */
         thread_list[i++]=c->thread_id;
         s_log(LOG_DEBUG, "Terminating a thread for [%s]", c->opt->servname);
-    }
-    if(per_second_thread_id) { /* append per_second_thread_id if used */
-        thread_list[threads++]=per_second_thread_id;
-        s_log(LOG_DEBUG, "Terminating the per-second thread");
-    }
-    if(per_minute_thread_id) { /* append per_minute_thread_id if used */
-        thread_list[threads++]=per_minute_thread_id;
-        s_log(LOG_DEBUG, "Terminating the per-minute thread");
-    }
-    if(per_day_thread_id) { /* append per_day_thread_id if used */
-        thread_list[threads++]=per_day_thread_id;
-        s_log(LOG_DEBUG, "Terminating the per-day thread");
     }
     s_unlock(lock);
 
@@ -419,12 +398,6 @@ NOEXPORT void status_info(int pid, int status, const char *info) {
 /**************************************** main loop accepting connections */
 
 void daemon_loop(void) {
-    if(cron_init()) { /* initialize periodic events */
-        s_log(LOG_CRIT, "Cron initialization failed");
-        /* The daemon cannot run without periodic maintenance. */
-        /* cppcheck-suppress misra-c2012-21.8 */
-        exit(1);
-    }
     if(exec_connect_start()) {
         s_log(LOG_CRIT, "Failed to start exec+connect services");
         /* No service loop can be entered after startup fails. */
@@ -500,13 +473,12 @@ NOEXPORT int accept_connection(SERVICE_OPTIONS *opt, unsigned i) {
 NOEXPORT ACCEPT_STATUS accept_udp_connection(SERVICE_OPTIONS *opt,
         SOCKET fd, CLI *c) {
     ssize_t len=0;
-    BIO *rbio, *wbio;
 
-    /* UDP: DTLS server mode validates cookies on the listening socket
-     * and leaves peer address in c->peer_addr.  It must not consume
-     * another datagram here: pending ClientHello data is drained by
-     * dtls_preload_pending() below.  DTLS client mode consumes and queues
-     * the first plaintext datagram to discover the peer. */
+    /* UDP: DTLS server mode runs the cookie exchange on the listening
+     * socket and leaves the peer address in c->peer_addr.  It must not
+     * consume another datagram here: what the peer sent meanwhile is taken
+     * by drain_udp_datagrams() below.  DTLS client mode consumes the first
+     * plaintext datagram to discover the peer. */
     if(accept_udp_peer(opt, fd, c, &len))
         return ACCEPT_FAILURE;
 
@@ -520,47 +492,17 @@ NOEXPORT ACCEPT_STATUS accept_udp_connection(SERVICE_OPTIONS *opt,
 
     if(opt->option.client) {
         c->sock_ptr=(size_t)len;
-        /* Drain same-peer datagrams from the listen fd so they
-         * don't spawn duplicate sessions for the same 4-tuple.
-         * drain_udp_datagrams() queues them in udp_preload_bio
-         * (dgram BIO) or drops them (old OpenSSL). */
+        /* Drain same-peer datagrams from the listening socket so they
+         * don't spawn duplicate sessions for the same 4-tuple. */
         if(drain_udp_datagrams(c, fd))
             return ACCEPT_FAILURE;
-    } else if(c->ssl) {
-        /* Server mode: dtls_listen() accepted the cookie and left
-         * c->ssl in handshake state.  Drain same-peer fragments. */
+    } else if(c->msh) {
+        /* Server mode: the cookie exchange left the session mid-handshake.
+         * Drain same-peer fragments before this socket stops seeing them. */
         if(drain_udp_datagrams(c, fd))
             return ACCEPT_FAILURE;
     } else {
         /* no pre-initialized DTLS state to drain */
-    }
-
-    if(c->ssl) {
-        /* Pre-initialized by dtls_listen() on the listen socket.
-         * Retarget BIOs from listen fd to connected client fd,
-         * preserving DTLSv1_listen() handshake state. */
-        rbio=SSL_get_rbio(c->ssl);
-        if(rbio) {
-            long bio_result;
-
-            bio_result=BIO_set_fd(rbio,
-                (int)c->local_rfd.fd, BIO_NOCLOSE);
-            if(bio_result<=0) {
-                ssl_error(c, "BIO_set_fd");
-                return ACCEPT_FAILURE;
-            }
-        }
-        wbio=SSL_get_wbio(c->ssl);
-        if(wbio && wbio!=rbio) {
-            long bio_result;
-
-            bio_result=BIO_set_fd(wbio,
-                (int)c->local_wfd.fd, BIO_NOCLOSE);
-            if(bio_result<=0) {
-                ssl_error(c, "BIO_set_fd");
-                return ACCEPT_FAILURE;
-            }
-        }
     }
 
     return ACCEPT_SUCCESS;
@@ -1344,22 +1286,7 @@ void stunnel_info(int level) {
     char *features;
 
     s_log(level, "stunnel " STUNNEL_VERSION " on " HOST " platform");
-    if(strcmp(OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION))) {
-        s_log(level, "Compiled with " OPENSSL_VERSION_TEXT);
-        s_log(level, "Running  with %s", OpenSSL_version(OPENSSL_VERSION));
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-        /* OpenSSL version fields have fixed widths defined by its API. */
-        /* cppcheck-suppress misra-c2012-10.4 */
-        if((OPENSSL_version_major()<<8U | OPENSSL_version_minor()) !=
-                /* cppcheck-suppress [misra-c2012-10.1, misra-c2012-12.2] */
-                OPENSSL_VERSION_NUMBER>>20U)
-#else /* OpenSSL version < 3.0.0 */
-        if(OpenSSL_version_num()>>12U != OPENSSL_VERSION_NUMBER>>12U)
-#endif /* OpenSSL version >= 3.0.0 */
-            s_log(level, "Update OpenSSL shared libraries or rebuild stunnel");
-    } else {
-        s_log(level, "Compiled/running with " OPENSSL_VERSION_TEXT);
-    }
+    s_log( level, "Compiled without OPENSSL" );
 
     features=str_dup("Threading:");
 #ifdef USE_UCONTEXT

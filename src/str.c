@@ -250,21 +250,6 @@ NOEXPORT LPTSTR str_vtprintf(LPCTSTR format, va_list ap) {
 
 void str_init(void) {
     (void)memset(leak_hash_table, 0, sizeof leak_hash_table);
-#if OPENSSL_VERSION_NUMBER>=0x10100000L
-    {
-        int hook_result;
-
-        hook_result=CRYPTO_set_mem_functions(str_alloc_detached_debug,
-            str_realloc_detached_debug, str_free_debug);
-#if !defined(LIBRESSL_VERSION_NUMBER)
-        if(!hook_result)
-            fatal("CRYPTO_set_mem_functions failed");
-#endif
-    }
-#else
-    CRYPTO_set_mem_ex_functions(str_alloc_detached_debug,
-        str_realloc_detached_debug, free_function);
-#endif
 }
 
 void str_thread_init(TLS_DATA *tls_data) {

@@ -1334,6 +1334,17 @@ NOEXPORT LPTSTR log_txt(void) {
     return buff;
 }
 
+BOOL WINAPI CryptHashCertificate( void * unused, ALG_ID Algid, DWORD dwFlags, const BYTE * pbEncoded, DWORD cbEncoded, BYTE * pbComputedHash, DWORD * pcbComputedHash );
+
+unsigned char * SHA256( const unsigned char * d, size_t n, unsigned char * md )
+{
+    DWORD dwLen = 32;
+    CryptHashCertificate( NULL, 32780 /* CALG_SHA_256 */, 0, d, (DWORD)n, md, &dwLen );
+    return NULL;
+}
+
+SERVICE_OPTIONS * current_section = NULL;
+
 /**************************************** control pipe */
 
 /* build a pipe file name from the configuration file name */
